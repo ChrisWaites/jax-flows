@@ -1,2 +1,8 @@
-# jax-flows
-Normalizing flows in JAX
+# Normalizing Flows in JAX
+
+### Models
+
+- RealNVP
+- GLOW
+- MADE
+- MAF

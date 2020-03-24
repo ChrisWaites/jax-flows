@@ -7,254 +7,254 @@ import math
 import numpy as onp
 import numpy.random as npr
 
+import jax
 from jax import jit, grad, random
 import jax.numpy as np
 
-from jax.nn import (relu, log_softmax, softmax, softplus,
-                    sigmoid, elu, leaky_relu, selu, gelu,
-                    normalize)
-
 from jax.nn.initializers import glorot_normal, normal, ones, zeros, orthogonal
 from jax.experimental import optimizers, stax
-
-from jax.experimental.stax import (AvgPool, BatchNorm, Conv, Dense, FanInSum,
-                                   FanOut, Flatten, GeneralConv, Identity,
-                                   MaxPool, Relu, LogSoftmax, Tanh)
-
-from sklearn import cluster, datasets, mixture
-from sklearn.preprocessing import StandardScaler
-import matplotlib.pyplot as plt
-
-# Each layer constructor function returns an (init_fun, forward_fun, backward_fun) triplet, where
-#   init_fun: Takes an rng key and an input shape and returns params
-#   forward_fun: Takes an input and returns (result, logdet)
-#   backward_fun: Takes an input and returns (result, logdet)
+from jax.experimental.stax import Relu, Tanh
 
 
-def Shuffle(input_shape):
-  perm = npr.permutation(onp.prod(input_shape)).reshape(input_shape)
-  inv_perm = onp.argsort(perm)
-
+def Shuffle():
   def init_fun(rng, input_shape):
-    return ()
+    perm = npr.permutation(onp.prod(input_shape)).reshape(input_shape)
+    inv_perm = onp.argsort(perm)
 
-  def forward_fun(params, inputs, **kwargs):
-    return inputs[:, perm], np.zeros((inputs.shape[0], 1))
+    def normalizing_fun(params, inputs, **kwargs):
+      return inputs[:, perm], np.zeros((inputs.shape[0], 1))
 
-  def backward_fun(params, inputs, **kwargs):
-    return inputs[:, inv_perm], np.zeros((inputs.shape[0], 1))
+    def generative_fun(params, inputs, **kwargs):
+      return inputs[:, inv_perm], np.zeros((inputs.shape[0], 1))
 
-  return init_fun, forward_fun, backward_fun
+    return (), normalizing_fun, generative_fun
+  return init_fun
 
 
-def Reverse(input_shape):
-  perm = np.array(np.arange(onp.prod(input_shape))[::-1]).reshape(input_shape)
-  inv_perm = np.argsort(perm)
-
+def Reverse():
   def init_fun(rng, input_shape):
-    return ()
+    perm = np.array(np.arange(onp.prod(input_shape))[::-1]).reshape(input_shape)
+    inv_perm = np.argsort(perm)
 
-  def forward_fun(params, inputs, **kwargs):
-    return inputs[:, perm], np.zeros((inputs.shape[0], 1))
+    def normalizing_fun(params, inputs, **kwargs):
+      return inputs[:, perm], np.zeros((inputs.shape[0], 1))
 
-  def backward_fun(params, inputs, **kwargs):
-    return inputs[:, inv_perm], np.zeros((inputs.shape[0], 1))
+    def generative_fun(params, inputs, **kwargs):
+      return inputs[:, inv_perm], np.zeros((inputs.shape[0], 1))
 
-  return init_fun, forward_fun, backward_fun
+    return (), normalizing_fun, generative_fun
+  return init_fun
 
 
-def CouplingLayer(scale_net, translate_net, mask):
+def CouplingLayer(scale, translate, mask):
   """
   Args:
-    *scale: an (params, apply_fun) pair
-    *translate: an (params, apply_fun) pair
-    *mask:
+    *scale: A trainable scaling function, i.e. a (params, apply_fun) pair
+    *translate: A trainable translation function, i.e. a (params, apply_fun) pair
+    *mask: A binary mask of shape input_shape
 
   Returns:
-    A new layer, meaning an (init_fun, forward_fun, backward_fun) pair
+    A new layer, i.e. a (params, normalizing_fun, generative_fun) triplet
   """
-  scale_params, scale_apply_fun = scale_net
-  translate_params, translate_apply_fun = translate_net
-
   def init_fun(rng, input_shape):
-    return (scale_params, translate_params)
+    scale_params, scale_apply_fun = scale
+    translate_params, translate_apply_fun = translate
 
-  def forward_fun(params, inputs, **kwargs):
-    scale_params, translate_params = params
+    def normalizing_fun(params, inputs, **kwargs):
+      scale_params, translate_params = params
 
-    masked_inputs = inputs * mask
-    log_s = scale_apply_fun(scale_params, masked_inputs) * (1 - mask)
-    t = translate_apply_fun(translate_params, masked_inputs) * (1 - mask)
-    s = np.exp(log_s)
-    return inputs * s + t, log_s.sum(-1, keepdims=True)
+      masked_inputs = inputs * mask
+      log_s = scale_apply_fun(scale_params, masked_inputs) * (1 - mask)
+      t = translate_apply_fun(translate_params, masked_inputs) * (1 - mask)
+      s = np.exp(log_s)
 
-  def backward_fun(params, inputs, **kwargs):
-    scale_params, translate_params = params
+      return inputs * s + t, log_s.sum(-1, keepdims=True)
 
-    masked_inputs = inputs * mask
-    log_s = scale_apply_fun(scale_params, masked_inputs) * (1 - mask)
-    t = translate_apply_fun(translate_params, masked_inputs) * (1 - mask)
-    s = np.exp(-log_s)
-    return (inputs - t) * s, log_s.sum(-1, keepdims=True)
+    def generative_fun(params, inputs, **kwargs):
+      scale_params, translate_params = params
 
-  return init_fun, forward_fun, backward_fun
+      masked_inputs = inputs * mask
+      log_s = scale_apply_fun(scale_params, masked_inputs) * (1 - mask)
+      t = translate_apply_fun(translate_params, masked_inputs) * (1 - mask)
+      s = np.exp(-log_s)
+
+      return (inputs - t) * s, log_s.sum(-1, keepdims=True)
+
+    return (scale_params, translate_params), normalizing_fun, generative_fun
+  return init_fun
 
 
-"""
-def BatchNormFlow(axis=(0, 1, 2), epsilon=1e-5, center=True, scale=True, beta_init=zeros, gamma_init=ones):
-  _beta_init = lambda rng, shape: beta_init(rng, shape) if center else ()
-  _gamma_init = lambda rng, shape: gamma_init(rng, shape) if scale else ()
-  axis = (axis,) if np.isscalar(axis) else axis
+def get_mask(in_features, out_features, in_flow_features, mask_type=None):
+  if mask_type == 'input':
+    in_degrees = np.arange(in_features) % in_flow_features
+  else:
+    in_degrees = np.arange(in_features) % (in_flow_features - 1)
 
+  if mask_type == 'output':
+    out_degrees = np.arange(out_features) % in_flow_features - 1
+  else:
+    out_degrees = np.arange(out_features) % (in_flow_features - 1)
+
+  mask = np.transpose(np.expand_dims(out_degrees, -1) >= np.expand_dims(in_degrees, 0)).astype(np.float32)
+  return mask
+
+
+def MaskedDense(out_dim, mask, W_init=glorot_normal(), b_init=normal()):
   def init_fun(rng, input_shape):
-    shape = tuple(d for i, d in enumerate(input_shape) if i not in axis)
+    output_shape = input_shape[:-1] + (out_dim,)
     k1, k2 = random.split(rng)
-    beta, gamma = _beta_init(k1, shape), _gamma_init(k2, shape)
+    W, b = W_init(k1, (input_shape[-1], out_dim)), b_init(k2, (out_dim,))
+    return output_shape, (W, b)
 
-    return (beta, gamma)
+  def apply_fun(params, inputs, **kwargs):
+    W, b = params
+    return np.dot(inputs, W * mask) + b
 
-  def forward_fun(params, x, **kwargs):
-    beta, gamma = params
-    ed = tuple(None if i in axis else slice(None) for i in range(np.ndim(x)))
-    beta = beta[ed]
-    gamma = gamma[ed]
-    z = normalize(x, axis, epsilon=epsilon)
-
-    if center and scale:
-      return gamma * z + beta
-    elif center:
-      return z + beta
-    elif scale:
-      return gamma * z
-    else:
-      return z
-
-  def backward_fun(params, inputs, **kwargs):
-    if training:
-      mean = batch_mean
-      var = batch_var
-    else:
-      mean = running_mean
-      var = running_var
-
-    x_hat = (inputs - beta) / torch.exp(log_gamma)
-    y = x_hat * var.sqrt() + mean
-    return y, (-log_gamma + 0.5 * torch.log(var)).sum(-1, keepdim=True)
-
-  return init_fun, forward_fun, backward_fun
-"""
+  return init_fun, apply_fun
 
 
-def serial(*layers):
-  nlayers = len(layers)
-  init_funs, forward_funs, backward_funs = zip(*layers)
+def MADE():
+  """
+  Args:
+    *scale: A trainable scaling function, i.e. a (params, apply_fun) pair
+    *translate: A trainable translation function, i.e. a (params, apply_fun) pair
+    *mask: A binary mask of shape input_shape
 
+  Returns:
+    A new layer, i.e. a (params, normalizing_fun, generative_fun) triplet
+  """
   def init_fun(rng, input_shape):
-    params = []
+    num_hidden = 64
+    num_inputs = input_shape[-1]
+
+    input_mask = get_mask(num_inputs, num_hidden, num_inputs, mask_type='input')
+    hidden_mask = get_mask(num_hidden, num_hidden, num_inputs, mask_type=None)
+    output_mask = get_mask(num_hidden, num_inputs * 2, num_inputs, mask_type='output')
+
+    joiner_init_fun, joiner_apply_fun = MaskedDense(num_hidden, input_mask)
+    _, joiner_params = joiner_init_fun(rng, input_shape)
+
+    trunk_init_fun, trunk_apply_fun = stax.serial(
+      Relu,
+      MaskedDense(num_hidden, hidden_mask),
+      Relu,
+      MaskedDense(num_inputs * 2, output_mask)
+    )
+    _, trunk_params = trunk_init_fun(rng, (num_hidden,))
+
+    def normalizing_fun(params, inputs, **kwargs):
+      joiner_params, trunk_params = params
+
+      h = joiner_apply_fun(joiner_params, inputs)
+      m, a = trunk_apply_fun(trunk_params, h).split(2, 1)
+      u = (inputs - m) * np.exp(-a)
+
+      return u, -a.sum(-1, keepdims=True)
+
+    def generative_fun(params, inputs, **kwargs):
+      joiner_params, trunk_params = params
+
+      x = np.zeros_like(inputs)
+      for i_col in range(inputs.shape[1]):
+        h = joiner_apply_fun(joiner_params, x)
+        m, a = trunk_apply_fun(trunk_params, h).split(2, 1)
+        # x[:, i_col] = inputs[:, i_col] * np.exp(a[:, i_col]) + m[:, i_col]
+        x = jax.ops.index_update(x, jax.ops.index[:, i_col], inputs[:, i_col] * np.exp(a[:, i_col]) + m[:, i_col])
+
+      return x, -a.sum(-1, keepdims=True)
+
+    return (joiner_params, trunk_params), normalizing_fun, generative_fun
+  return init_fun
+
+
+def serial(*init_funs):
+  def init_fun(rng, input_shape):
+    params, normalizing_funs, generative_funs = [], [], []
     for init_fun in init_funs:
       rng, layer_rng = random.split(rng)
-      param = init_fun(layer_rng, input_shape)
+      param, normalizing_fun, generative_fun = init_fun(layer_rng, input_shape)
+
       params.append(param)
-    return params
+      normalizing_funs.append(normalizing_fun)
+      generative_funs.append(generative_fun)
 
-  def forward_fun(params, inputs, **kwargs):
-    rng = kwargs.pop('rng', None)
-    rngs = random.split(rng, nlayers) if rng is not None else (None,) * nlayers
-    logdets = None
-    for fun, param, rng in zip(forward_funs, params, rngs):
-      inputs, logdet = fun(param, inputs, rng=rng, **kwargs)
-      if logdets is None:
-          logdets = logdet
-      else:
-          logdets += logdet
-    return inputs, logdets
+    def normalizing_fun(params, inputs, **kwargs):
+      rng = kwargs.pop('rng', None)
+      rngs = random.split(rng, len(init_funs)) if rng is not None else (None,) * len(init_funs)
+      logdets = None
+      for fun, param, rng in zip(normalizing_funs, params, rngs):
+        inputs, logdet = fun(param, inputs, rng=rng, **kwargs)
+        if logdets is None:
+            logdets = logdet
+        else:
+            logdets += logdet
+      return inputs, logdets
 
-  def backward_fun(params, inputs, **kwargs):
-    rng = kwargs.pop('rng', None)
-    rngs = random.split(rng, nlayers) if rng is not None else (None,) * nlayers
-    logdets = None
-    for fun, param, rng in reversed(list(zip(backward_funs, params, rngs))):
-      inputs, logdet = fun(param, inputs, rng=rng, **kwargs)
-      if logdets is None:
-          logdets = logdet
-      else:
-          logdets += logdet
-    return inputs, logdets
+    def generative_fun(params, inputs, **kwargs):
+      rng = kwargs.pop('rng', None)
+      rngs = random.split(rng, len(init_funs)) if rng is not None else (None,) * len(init_funs)
+      logdets = None
+      for fun, param, rng in reversed(list(zip(generative_funs, params, rngs))):
+        inputs, logdet = fun(param, inputs, rng=rng, **kwargs)
+        if logdets is None:
+            logdets = logdet
+        else:
+            logdets += logdet
+      return inputs, logdets
 
-  return init_fun, forward_fun, backward_fun
-
-
-def log_probs(params, forward_fun, inputs):
-  u, log_jacob = forward_fun(params, inputs)
-  log_probs = (-.5 * (u ** 2.) - .5 * np.log(2 * math.pi)).sum(-1, keepdims=True)
-  return (log_probs + log_jacob).sum(-1, keepdims=True)
+    return params, normalizing_fun, generative_fun
+  return init_fun
 
 
-def net(rng, input_shape, hidden_dim=64, act_fun=Relu):
+def net(rng, input_shape, hidden_dim=64, act=Relu):
   init_fun, apply_fun = stax.serial(
-    Dense(hidden_dim, W_init=orthogonal(), b_init=zeros), act_fun,
-    Dense(hidden_dim, W_init=orthogonal(), b_init=zeros), act_fun,
+    Dense(hidden_dim, W_init=orthogonal(), b_init=zeros),
+    act,
+    Dense(hidden_dim, W_init=orthogonal(), b_init=zeros),
+    act,
     Dense(input_shape[-1], W_init=orthogonal(), b_init=zeros),
   )
   _, params = init_fun(rng, input_shape)
   return (params, apply_fun)
 
 
-def mask(input_shape=(2,)):
+def mask(input_shape):
   mask = onp.zeros(input_shape)
   mask[::2] = 1.
   return mask
 
 
-n_samples = 10000
-scaler = StandardScaler()
-xlim, ylim = [-2, 2], [-2, 2]
-
-X, _ = datasets.make_moons(n_samples=n_samples, noise=.05)
-X = scaler.fit_transform(X)
-plt.hist2d(X[:, 0], X[:, 1], bins=100, range=((-2, 2), (-2, 2)))
-plt.savefig('./train.png')
+def log_probs(params, normalizing_fun, inputs):
+  u, log_jacob = normalizing_fun(params, inputs)
+  log_probs = (-.5 * (u ** 2.) - .5 * np.log(2 * math.pi)).sum(-1, keepdims=True)
+  return (log_probs + log_jacob).sum(-1, keepdims=True)
 
 
-rng = random.PRNGKey(0)
-input_shape = (2,)
-
-init_fun, forward_fun, backward_fun = serial(
-  CouplingLayer(net(rng, input_shape, act=Tanh), net(rng, input_shape, act=Relu), mask()),
-  CouplingLayer(net(rng, input_shape, act=Tanh), net(rng, input_shape, act=Relu), 1 - mask()),
-  CouplingLayer(net(rng, input_shape, act=Tanh), net(rng, input_shape, act=Relu), mask()),
-  CouplingLayer(net(rng, input_shape, act=Tanh), net(rng, input_shape, act=Relu), 1 - mask()),
-  CouplingLayer(net(rng, input_shape, act=Tanh), net(rng, input_shape, act=Relu), mask()),
-)
-
-params = init_fun(rng, (2,))
-opt_init, opt_update, get_params = optimizers.adam(step_size=1e-3)
+def NLL(params, normalizing_fun, inputs):
+  return -log_probs(params, normalizing_fun, inputs).mean()
 
 
-def loss(params, forward_fun, inputs):
-  return -log_probs(params, forward_fun, inputs).mean()
+def GaussianPrior():
+  def pdf(inputs):
+    return (-.5 * (inputs ** 2.) - .5 * np.log(2 * math.pi)).sum(-1, keepdims=True)
 
-@jit
-def step(i, opt_state, batch):
-  params = get_params(opt_state)
-  return opt_update(i, grad(loss)(params, forward_fun, batch), opt_state)
+  def sample(input_shape, num_samples=1):
+    return npr.normal(0., 1., (num_samples,) + input_shape)
 
-
-itercount = itertools.count()
-batch_size = 100
-num_epochs = 1000
-opt_state = opt_init(params)
+  return pdf, sampler
 
 
-for epoch in tqdm(range(num_epochs)):
-  npr.shuffle(X)
-  for batch_index in range(0, len(X), batch_size):
-    opt_state = step(next(itercount), opt_state, X[batch_index:batch_index+batch_size])
-params = get_params(opt_state)
+def Flow(transformation_init, rng, input_shape, prior=GaussianPrior()):
+  params, normalizing_fun, _  = transformation_init_fun(rng, input_shape)
+  pdf, sampler = prior
 
+  def log_prob(inputs):
+    u, log_jacob = normalizing_fun(params, inputs)
+    log_probs = pdf(u)
+    return (log_probs + log_jacob).sum(-1, keepdims=True)
 
-Z = npr.normal(0, 1, (n_samples, 2))
-X, _ = backward_fun(params, Z)
-plt.hist2d(X[:, 0], X[:, 1], bins=100, range=((-2, 2), (-2, 2)))
-plt.savefig('./synth.png')
+  def sample(num_samples):
+    return sampler(input_shape, num_samples)
+
+  return params, log_prob, sample
 
