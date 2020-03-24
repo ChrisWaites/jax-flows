@@ -1,9 +1,3 @@
-import functools
-import itertools
-import operator as op
-from tqdm import tqdm
-import math
-
 import numpy as onp
 import numpy.random as npr
 
@@ -11,9 +5,9 @@ import jax
 from jax import jit, grad, random
 import jax.numpy as np
 
-from jax.nn.initializers import glorot_normal, normal, ones, zeros, orthogonal
-from jax.experimental import optimizers, stax
-from jax.experimental.stax import Relu, Tanh
+from jax.experimental import stax
+from jax.experimental.stax import Relu, Dense
+from jax.nn.initializers import glorot_normal, normal
 
 
 def Shuffle():
@@ -100,11 +94,7 @@ def get_mask(in_features, out_features, in_flow_features, mask_type=None):
 
 
 def MaskedDense(out_dim, mask, W_init=glorot_normal(), b_init=normal()):
-  def init_fun(rng, input_shape):
-    output_shape = input_shape[:-1] + (out_dim,)
-    k1, k2 = random.split(rng)
-    W, b = W_init(k1, (input_shape[-1], out_dim)), b_init(k2, (out_dim,))
-    return output_shape, (W, b)
+  init_fun, _ = Dense(out_dim, W_init, b_init)
 
   def apply_fun(params, inputs, **kwargs):
     W, b = params
@@ -128,7 +118,7 @@ def MADE():
     num_inputs = input_shape[-1]
 
     input_mask = get_mask(num_inputs, num_hidden, num_inputs, mask_type='input')
-    hidden_mask = get_mask(num_hidden, num_hidden, num_inputs, mask_type=None)
+    hidden_mask = get_mask(num_hidden, num_hidden, num_inputs)
     output_mask = get_mask(num_hidden, num_inputs * 2, num_inputs, mask_type='output')
 
     joiner_init_fun, joiner_apply_fun = MaskedDense(num_hidden, input_mask)
@@ -204,57 +194,4 @@ def serial(*init_funs):
 
     return params, normalizing_fun, generative_fun
   return init_fun
-
-
-def net(rng, input_shape, hidden_dim=64, act=Relu):
-  init_fun, apply_fun = stax.serial(
-    Dense(hidden_dim, W_init=orthogonal(), b_init=zeros),
-    act,
-    Dense(hidden_dim, W_init=orthogonal(), b_init=zeros),
-    act,
-    Dense(input_shape[-1], W_init=orthogonal(), b_init=zeros),
-  )
-  _, params = init_fun(rng, input_shape)
-  return (params, apply_fun)
-
-
-def mask(input_shape):
-  mask = onp.zeros(input_shape)
-  mask[::2] = 1.
-  return mask
-
-
-def log_probs(params, normalizing_fun, inputs):
-  u, log_jacob = normalizing_fun(params, inputs)
-  log_probs = (-.5 * (u ** 2.) - .5 * np.log(2 * math.pi)).sum(-1, keepdims=True)
-  return (log_probs + log_jacob).sum(-1, keepdims=True)
-
-
-def NLL(params, normalizing_fun, inputs):
-  return -log_probs(params, normalizing_fun, inputs).mean()
-
-
-def GaussianPrior():
-  def pdf(inputs):
-    return (-.5 * (inputs ** 2.) - .5 * np.log(2 * math.pi)).sum(-1, keepdims=True)
-
-  def sample(input_shape, num_samples=1):
-    return npr.normal(0., 1., (num_samples,) + input_shape)
-
-  return pdf, sampler
-
-
-def Flow(transformation_init, rng, input_shape, prior=GaussianPrior()):
-  params, normalizing_fun, _  = transformation_init_fun(rng, input_shape)
-  pdf, sampler = prior
-
-  def log_prob(inputs):
-    u, log_jacob = normalizing_fun(params, inputs)
-    log_probs = pdf(u)
-    return (log_probs + log_jacob).sum(-1, keepdims=True)
-
-  def sample(num_samples):
-    return sampler(input_shape, num_samples)
-
-  return params, log_prob, sample
 
