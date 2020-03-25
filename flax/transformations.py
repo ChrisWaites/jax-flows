@@ -1,7 +1,6 @@
 import jax
 import jax.numpy as np
 import numpy as onp
-import numpy.random as npr
 from jax import random
 from jax.experimental import stax
 from jax.experimental.stax import Dense, Relu
@@ -13,13 +12,13 @@ def Shuffle():
         perm = random.shuffle(rng, np.arange(onp.prod(input_shape))).reshape(input_shape)
         inv_perm = np.argsort(perm)
 
-        def normalizing_fun(params, inputs, **kwargs):
+        def direct_fun(params, inputs, **kwargs):
             return inputs[:, perm], np.zeros((inputs.shape[0], 1))
 
-        def generative_fun(params, inputs, **kwargs):
+        def inverse_fun(params, inputs, **kwargs):
             return inputs[:, inv_perm], np.zeros((inputs.shape[0], 1))
 
-        return (), normalizing_fun, generative_fun
+        return (), direct_fun, inverse_fun
 
     return init_fun
 
@@ -29,33 +28,33 @@ def Reverse():
         perm = np.array(np.arange(onp.prod(input_shape))[::-1]).reshape(input_shape)
         inv_perm = np.argsort(perm)
 
-        def normalizing_fun(params, inputs, **kwargs):
+        def direct_fun(params, inputs, **kwargs):
             return inputs[:, perm], np.zeros((inputs.shape[0], 1))
 
-        def generative_fun(params, inputs, **kwargs):
+        def inverse_fun(params, inputs, **kwargs):
             return inputs[:, inv_perm], np.zeros((inputs.shape[0], 1))
 
-        return (), normalizing_fun, generative_fun
+        return (), direct_fun, inverse_fun
 
     return init_fun
 
 
 def CouplingLayer(scale, translate, mask):
     """
-  Args:
-    *scale: A trainable scaling function, i.e. a (params, apply_fun) pair
-    *translate: A trainable translation function, i.e. a (params, apply_fun) pair
-    *mask: A binary mask of shape input_shape
+    Args:
+        *scale: A trainable scaling function, i.e. a (params, apply_fun) pair
+        *translate: A trainable translation function, i.e. a (params, apply_fun) pair
+        *mask: A binary mask of shape input_shape
 
-  Returns:
-    A new layer, i.e. a (params, normalizing_fun, generative_fun) triplet
-  """
+    Returns:
+        A new layer, i.e. a (params, direct_fun, inverse_fun) triplet
+    """
 
     def init_fun(rng, input_shape):
         scale_params, scale_apply_fun = scale
         translate_params, translate_apply_fun = translate
 
-        def normalizing_fun(params, inputs, **kwargs):
+        def direct_fun(params, inputs, **kwargs):
             scale_params, translate_params = params
 
             masked_inputs = inputs * mask
@@ -65,7 +64,7 @@ def CouplingLayer(scale, translate, mask):
 
             return inputs * s + t, log_s.sum(-1, keepdims=True)
 
-        def generative_fun(params, inputs, **kwargs):
+        def inverse_fun(params, inputs, **kwargs):
             scale_params, translate_params = params
 
             masked_inputs = inputs * mask
@@ -75,7 +74,7 @@ def CouplingLayer(scale, translate, mask):
 
             return (inputs - t) * s, log_s.sum(-1, keepdims=True)
 
-        return (scale_params, translate_params), normalizing_fun, generative_fun
+        return (scale_params, translate_params), direct_fun, inverse_fun
 
     return init_fun
 
@@ -107,14 +106,14 @@ def MaskedDense(out_dim, mask, W_init=glorot_normal(), b_init=normal()):
 
 def MADE():
     """
-  Args:
-    *scale: A trainable scaling function, i.e. a (params, apply_fun) pair
-    *translate: A trainable translation function, i.e. a (params, apply_fun) pair
-    *mask: A binary mask of shape input_shape
+    Args:
+        *scale: A trainable scaling function, i.e. a (params, apply_fun) pair
+        *translate: A trainable translation function, i.e. a (params, apply_fun) pair
+        *mask: A binary mask of shape input_shape
 
-  Returns:
-    A new layer, i.e. a (params, normalizing_fun, generative_fun) triplet
-  """
+    Returns:
+        A new layer, i.e. a (params, direct_fun, inverse_fun) triplet
+    """
 
     def init_fun(rng, input_shape):
         num_hidden = 64
@@ -132,7 +131,7 @@ def MADE():
         )
         _, trunk_params = trunk_init_fun(rng, (num_hidden,))
 
-        def normalizing_fun(params, inputs, **kwargs):
+        def direct_fun(params, inputs, **kwargs):
             joiner_params, trunk_params = params
 
             h = joiner_apply_fun(joiner_params, inputs)
@@ -141,7 +140,7 @@ def MADE():
 
             return u, -a.sum(-1, keepdims=True)
 
-        def generative_fun(params, inputs, **kwargs):
+        def inverse_fun(params, inputs, **kwargs):
             joiner_params, trunk_params = params
 
             x = np.zeros_like(inputs)
@@ -155,27 +154,27 @@ def MADE():
 
             return x, -a.sum(-1, keepdims=True)
 
-        return (joiner_params, trunk_params), normalizing_fun, generative_fun
+        return (joiner_params, trunk_params), direct_fun, inverse_fun
 
     return init_fun
 
 
 def serial(*init_funs):
     def init_fun(rng, input_shape):
-        params, normalizing_funs, generative_funs = [], [], []
+        params, direct_funs, inverse_funs = [], [], []
         for init_fun in init_funs:
             rng, layer_rng = random.split(rng)
-            param, normalizing_fun, generative_fun = init_fun(layer_rng, input_shape)
+            param, direct_fun, inverse_fun = init_fun(layer_rng, input_shape)
 
             params.append(param)
-            normalizing_funs.append(normalizing_fun)
-            generative_funs.append(generative_fun)
+            direct_funs.append(direct_fun)
+            inverse_funs.append(inverse_fun)
 
-        def normalizing_fun(params, inputs, **kwargs):
+        def direct_fun(params, inputs, **kwargs):
             rng = kwargs.pop("rng", None)
             rngs = random.split(rng, len(init_funs)) if rng is not None else (None,) * len(init_funs)
             logdets = None
-            for fun, param, rng in zip(normalizing_funs, params, rngs):
+            for fun, param, rng in zip(direct_funs, params, rngs):
                 inputs, logdet = fun(param, inputs, rng=rng, **kwargs)
                 if logdets is None:
                     logdets = logdet
@@ -183,11 +182,11 @@ def serial(*init_funs):
                     logdets += logdet
             return inputs, logdets
 
-        def generative_fun(params, inputs, **kwargs):
+        def inverse_fun(params, inputs, **kwargs):
             rng = kwargs.pop("rng", None)
             rngs = random.split(rng, len(init_funs)) if rng is not None else (None,) * len(init_funs)
             logdets = None
-            for fun, param, rng in reversed(list(zip(generative_funs, params, rngs))):
+            for fun, param, rng in reversed(list(zip(inverse_funs, params, rngs))):
                 inputs, logdet = fun(param, inputs, rng=rng, **kwargs)
                 if logdets is None:
                     logdets = logdet
@@ -195,6 +194,6 @@ def serial(*init_funs):
                     logdets += logdet
             return inputs, logdets
 
-        return params, normalizing_fun, generative_fun
+        return params, direct_fun, inverse_fun
 
     return init_fun
