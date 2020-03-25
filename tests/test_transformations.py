@@ -7,15 +7,15 @@ from jax.experimental import stax
 from jax.experimental.stax import Dense, Relu, Tanh
 from jax.nn.initializers import orthogonal, zeros
 
-import flax
+import flows
 
 
-class TestTransformations(unittest.TestCase):
+class Tests(unittest.TestCase):
     def test_shuffle(self):
         num_examples, input_shape, tol = 100, (3,), 1e-4
         layer_rng, input_rng = random.split(random.PRNGKey(0))
 
-        init_fun = flax.Shuffle()
+        init_fun = flows.Shuffle()
         params, direct_fun, inverse_fun = init_fun(layer_rng, input_shape)
 
         inputs = random.uniform(input_rng, (num_examples,) + input_shape, minval=-10.0, maxval=10.0)
@@ -28,7 +28,7 @@ class TestTransformations(unittest.TestCase):
         num_examples, input_shape, tol = 100, (3,), 1e-4
         layer_rng, input_rng = random.split(random.PRNGKey(0))
 
-        init_fun = flax.Reverse()
+        init_fun = flows.Reverse()
         params, direct_fun, inverse_fun = init_fun(layer_rng, input_shape)
 
         inputs = random.uniform(input_rng, (num_examples,) + input_shape, minval=-10.0, maxval=10.0)
@@ -57,7 +57,7 @@ class TestTransformations(unittest.TestCase):
         num_examples, input_shape, tol = 100, (3,), 1e-4
         layer_rng, input_rng, scale_rng, translate_rng = random.split(random.PRNGKey(0), 4)
 
-        init_fun = flax.CouplingLayer(
+        init_fun = flows.CouplingLayer(
             net(scale_rng, input_shape, act=Relu), net(translate_rng, input_shape, act=Tanh), mask(input_shape)
         )
 
@@ -73,7 +73,7 @@ class TestTransformations(unittest.TestCase):
         num_examples, input_shape, tol = 100, (3,), 1e-4
         layer_rng, input_rng = random.split(random.PRNGKey(0))
 
-        init_fun = flax.MADE()
+        init_fun = flows.MADE()
         params, direct_fun, inverse_fun = init_fun(layer_rng, input_shape)
 
         inputs = random.uniform(input_rng, (num_examples,) + input_shape, minval=-10.0, maxval=10.0)
