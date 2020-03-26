@@ -1,4 +1,4 @@
 # flake8: noqa
 
+from .bijections import *
 from .distributions import *
-from .transformations import *

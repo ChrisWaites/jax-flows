@@ -10,7 +10,25 @@ Welcome to jax-flows's documentation!
    :maxdepth: 2
    :caption: Contents:
 
+Transformations
+---------------
 
+.. autofunction:: flows.Shuffle
+
+.. autofunction:: flows.Reverse
+
+.. autofunction:: flows.MADE
+
+.. autofunction:: flows.CouplingLayer
+
+.. autofunction:: flows.serial
+
+Distributions
+-------------
+
+.. autofunction:: flows.Normal
+
+.. autofunction:: flows.Flow
 
 Indices and tables
 ==================

@@ -1,10 +1,25 @@
 ## How do I contribute to `jax-flows`?
 
-Great to hear you're interested in contributing to the project!
+Great to hear you're interested in contributing to the project! First, you'll need to fork this repository and make a branch for your edits.
 
-### Tests
+### Setting up your environment
 
-You can run `jax-flows` tests using either `unittest` or `pytest`.
+To make changes and run things, you'll likely need to install the necessary dependencies.
+
+```
+pip install .[dev]
+```
+
+### Tests and documentation
+
+In general, code committed to this repository needs to be tested and documented. That means including two things, namely:
+
+- Explicit unit tests in the `tests` directory
+- Docstrings for public facing functions
+    - These should include at least a rudimentary `doctest`.
+    - Docstrings follow the [Google style guide](https://google.github.io/styleguide/pyguide.html).
+
+To run the tests, in the root of the repository:
 
 ```
 make test
@@ -12,17 +27,21 @@ make test
 
 ### Style
 
-To check for style errors, execute the following.
+We also adhere to strict style guidelines.
 
-```
-make quality
-```
-
-To run a linter, execute the following.
+To run a linter which will automatically format a majority of your code:
 
 ```
 make style
 ```
 
-Docstrings in `jax-flows` follows the [google style guide](https://google.github.io/styleguide/pyguide.html).
+This will do many but not all things. Ultimately, your changes will need to pass the following quality check:
+
+```
+make quality
+```
+
+### Submitting a PR
+
+Once you've made your changes, push and submit a pull request, filling out the necessary information. An admin will review your branch shortly and accept it if they see fit!
 
