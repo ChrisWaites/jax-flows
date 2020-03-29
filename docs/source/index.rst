@@ -13,22 +13,32 @@ Welcome to jax-flows's documentation!
 Transformations
 ---------------
 
-.. autofunction:: flows.Shuffle
+.. autofunction:: flows.ActNorm
 
-.. autofunction:: flows.Reverse
+.. autofunction:: flows.AffineCoupling
+
+.. autofunction:: flows.Invert
+
+.. autofunction:: flows.InvertibleMM
+
+.. autofunction:: flows.Logit
 
 .. autofunction:: flows.MADE
 
-.. autofunction:: flows.CouplingLayer
+.. autofunction:: flows.Reverse
+
+.. autofunction:: flows.Shuffle
+
+.. autofunction:: flows.Sigmoid
 
 .. autofunction:: flows.serial
 
 Distributions
 -------------
 
-.. autofunction:: flows.Normal
-
 .. autofunction:: flows.Flow
+
+.. autofunction:: flows.Normal
 
 Indices and tables
 ==================

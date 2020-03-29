@@ -10,27 +10,44 @@ from jax.nn.initializers import orthogonal, zeros
 import flows
 
 
-def is_bijective(test, init_fun, num_examples=100, input_shape=(3,), minval=-10.0, maxval=10.0, tol=1e-3):
-    layer_rng, input_rng = random.split(random.PRNGKey(0))
+def is_bijective(
+    test, init_fun, inputs=random.uniform(random.PRNGKey(0), (20, 3), minval=-10.0, maxval=10.0), tol=1e-3
+):
+    input_shape = inputs.shape[1:]
+    params, direct_fun, inverse_fun = init_fun(random.PRNGKey(0), input_shape)
 
-    params, direct_fun, inverse_fun = init_fun(layer_rng, input_shape)
-
-    inputs = random.uniform(input_rng, (num_examples,) + input_shape, minval=minval, maxval=maxval)
     mapped_inputs = direct_fun(params, inputs)[0]
     reconstructed_inputs = inverse_fun(params, mapped_inputs)[0]
 
     test.assertTrue(np.allclose(inputs, reconstructed_inputs, atol=tol))
 
 
+def returns_correct_shape(
+    test, init_fun, inputs=random.uniform(random.PRNGKey(0), (20, 3), minval=-10.0, maxval=10.0)
+):
+    input_shape = inputs.shape[1:]
+    params, direct_fun, inverse_fun = init_fun(random.PRNGKey(0), input_shape)
+
+    mapped_inputs, log_det_jacobian = direct_fun(params, inputs)
+    test.assertTrue(inputs.shape == mapped_inputs.shape)
+    test.assertTrue((inputs.shape[0], 1) == log_det_jacobian.shape)
+
+    mapped_inputs, log_det_jacobian = inverse_fun(params, inputs)
+    test.assertTrue(inputs.shape == mapped_inputs.shape)
+    test.assertTrue((inputs.shape[0], 1) == log_det_jacobian.shape)
+
+
 class Tests(unittest.TestCase):
     def test_shuffle(self):
-        is_bijective(self, flows.Shuffle())
+        for test in (returns_correct_shape, is_bijective):
+            test(self, flows.Shuffle())
 
     def test_reverse(self):
-        is_bijective(self, flows.Reverse())
+        for test in (returns_correct_shape, is_bijective):
+            test(self, flows.Reverse())
 
     def test_affine_coupling(self):
-        def net(input_shape=(3,), hidden_dim=64, act=Relu):
+        def net(input_shape, hidden_dim=64, act=Relu):
             return stax.serial(
                 Dense(hidden_dim, W_init=orthogonal(), b_init=zeros),
                 act,
@@ -39,29 +56,55 @@ class Tests(unittest.TestCase):
                 Dense(input_shape[-1], W_init=orthogonal(), b_init=zeros),
             )
 
-        def mask(input_shape=(3,)):
+        def mask(input_shape):
             mask = onp.zeros(input_shape)
             mask[::2] = 1.0
             return mask
 
-        input_shape = (3,)
+        inputs = random.uniform(random.PRNGKey(0), (20, 3), minval=-10.0, maxval=10.0)
 
         init_fun = flows.AffineCoupling(
-            net(input_shape=input_shape, act=Relu),
-            net(input_shape=input_shape, act=Tanh),
-            mask(input_shape=input_shape),
+            net(input_shape=inputs.shape[1:], act=Relu),
+            net(input_shape=inputs.shape[1:], act=Tanh),
+            mask(input_shape=inputs.shape[1:]),
         )
 
-        is_bijective(self, init_fun, input_shape=input_shape)
+        for test in (returns_correct_shape, is_bijective):
+            test(self, init_fun, inputs)
 
     def test_made(self):
-        is_bijective(self, flows.MADE())
+        for test in (returns_correct_shape, is_bijective):
+            test(self, flows.MADE())
 
     def test_actnorm(self):
-        is_bijective(self, flows.ActNorm())
+        for test in (returns_correct_shape, is_bijective):
+            test(self, flows.ActNorm())
+
+        # ----------------------------- Test data dependent initialization -----------------------------
+
+        inputs = random.uniform(random.PRNGKey(0), (20, 3), minval=-10.0, maxval=10.0)
+
+        init_fun = flows.serial(flows.ActNorm())
+        params, direct_fun, inverse_fun = init_fun(random.PRNGKey(0), inputs.shape[1:], inputs=inputs)
+
+        expected_weight, expected_bias = np.log(1.0 / (inputs.std(0) + 1e-12)), inputs.mean(0)
+
+        self.assertTrue(np.array_equal(params[0][0], expected_weight))
+        self.assertTrue(np.array_equal(params[0][1], expected_bias))
+
+    def test_invertible_mm(self):
+        for test in (returns_correct_shape, is_bijective):
+            test(self, flows.InvertibleMM())
 
     def test_sigmoid(self):
-        is_bijective(self, flows.Sigmoid())
+        for test in (returns_correct_shape, is_bijective):
+            test(self, flows.Sigmoid())
 
     def test_logit(self):
-        is_bijective(self, flows.Logit(), minval=0.0, maxval=1.0)
+        inputs = random.uniform(random.PRNGKey(0), (20, 3))
+        for test in (returns_correct_shape, is_bijective):
+            test(self, flows.Logit(), inputs)
+
+    def test_serial(self):
+        for test in (returns_correct_shape, is_bijective):
+            test(self, flows.serial(flows.Shuffle(), flows.Shuffle()))

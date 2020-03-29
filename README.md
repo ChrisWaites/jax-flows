@@ -18,16 +18,26 @@
 
 [Normalizing flow models](http://akosiorek.github.io/ml/2018/04/03/norm_flows.html) are _generative models_. That is, they infer the underlying probability distribution which generated a given dataset. With that distribution we can do a number of interesting things, namely query probability densities and sample new realistic points.
 
-## How are things structured?
+## Why JAX?
 
-For a more thorough description, check out the [documentation](https://jax-flows.readthedocs.io/).
+A few reasons!
+
+1) JAX encourages a functional style. When writing a layer, I didn't want people to worry about PyTorch or TensorFlow boilerplate and how their code has to fit into "the system" (e.g. do I have to keep track of `self.training` here?) _All_ you have to worry about is writing a vanilla python function which, given a set of inputs, returns the correct set of outputs. You could effectively have no knowledge of the encompassing framework and things would still work.
+
+2) JAX has a really flexible automatic differentiation system. So flexible, in fact, that you can (basically) write arbitrary python functions (including for loops, if statements, etc.) and automatically compute their jacobian with a call to `jax.jacfwd`. So, in theory, you could write a normalizing flow layer and automatically compute its jacobian's log determinant without having to do so manually (although we're not quite there yet).
+
+3) JAX's [random number generation system](https://github.com/google/jax/blob/master/design_notes/prng.md) places reproducibility first. To get a sense for this, when you start to parallelize a system, centralized state-based models for PRNG a la `torch.manual_seed()` or `tf.random.set_seed()` start to yield inconsistent results. Given that randomness is such a central component to work in this area, I thought that uncompromising reproducibility would be a nice feature.
+
+## How do things work?
+
+Here's an introduction! But for a more comprehensive description, check out the [documentation](https://jax-flows.readthedocs.io/).
 
 ### Bijections
 
 A `bijection` is a parameterized invertible function.
 
 ```python
-init_fun = flows.MADE()
+init_fun = flows.InvertibleMM()
 
 params, direct_fun, inverse_fun = init_fun(rng, input_shape)
 
@@ -44,9 +54,9 @@ We can construct a sequence of bijections using `flows.serial`. The result is ju
 
 ```python
 init_fun = flows.serial(
-  flows.MADE(),
-  flows.BatchNorm(),
-  flows.Reverse()
+    flows.AffineCoupling()
+    flows.InvertibleMM(),
+    flows.ActNorm(),
 )
 
 params, direct_fun, inverse_fun = init_fun(rng, input_shape)
@@ -74,12 +84,12 @@ Under this definition, a normalizing flow model is just a `distribution`. But to
 
 ```python
 bijection = flows.serial(
-  flows.MADE(),
-  flows.BatchNorm(),
-  flows.Reverse(),
-  flows.MADE(),
-  flows.BatchNorm(),
-  flows.Reverse(),
+    flows.AffineCoupling(),
+    flows.InvertibleMM(),
+    flows.ActNorm()
+    flows.AffineCoupling(),
+    flows.InvertibleMM(),
+    flows.ActNorm()
 )
 
 prior = flows.Normal()
@@ -91,33 +101,33 @@ params, log_pdf, sample = init_fun(rng, input_shape)
 
 ### How do I train a model?
 
-To train our model, we would typically define an appropriate loss function and parameter update step.
+The same as you always would in JAX! First, define an appropriate loss function and parameter update step.
 
 ```python
 def loss(params, inputs):
-  return -log_pdf(params, inputs).mean()
+    return -log_pdf(params, inputs).mean()
 
 @jit
 def step(i, opt_state, inputs):
-  params = get_params(opt_state)
-  gradient = grad(loss)(params, inputs)
-  return opt_update(i, gradient, opt_state)
+    params = get_params(opt_state)
+    gradient = grad(loss)(params, inputs)
+    return opt_update(i, gradient, opt_state)
 ```
 
-Given these, we can go forward and execute a standard JAX training loop.
+Then execute a standard JAX training loop.
 
 ```python
 batch_size = 32
 
 itercount = itertools.count()
 for epoch in range(num_epochs):
-  npr.shuffle(X)
-  for batch_index in range(0, len(X), batch_size):
-    opt_state = step(
-      next(itercount),
-      opt_state,
-      X[batch_index:batch_index+batch_size]
-    )
+    npr.shuffle(X)
+    for batch_index in range(0, len(X), batch_size):
+        opt_state = step(
+            next(itercount),
+            opt_state,
+            X[batch_index:batch_index+batch_size]
+        )
 
 optimized_params = get_params(opt_state)
 ```
