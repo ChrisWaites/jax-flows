@@ -37,7 +37,7 @@ Here's an introduction! But for a more comprehensive description, check out the 
 A `bijection` is a parameterized invertible function.
 
 ```python
-init_fun = flows.InvertibleMM()
+init_fun = flows.InvertibleLinear()
 
 params, direct_fun, inverse_fun = init_fun(rng, input_shape)
 
@@ -55,7 +55,7 @@ We can construct a sequence of bijections using `flows.serial`. The result is ju
 ```python
 init_fun = flows.serial(
     flows.AffineCoupling()
-    flows.InvertibleMM(),
+    flows.InvertibleLinear(),
     flows.ActNorm(),
 )
 
@@ -85,10 +85,10 @@ Under this definition, a normalizing flow model is just a `distribution`. But to
 ```python
 bijection = flows.serial(
     flows.AffineCoupling(),
-    flows.InvertibleMM(),
+    flows.InvertibleLinear(),
     flows.ActNorm()
     flows.AffineCoupling(),
-    flows.InvertibleMM(),
+    flows.InvertibleLinear(),
     flows.ActNorm()
 )
 

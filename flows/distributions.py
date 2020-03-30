@@ -37,10 +37,8 @@ def Flow(transformation, prior=Normal()):
     Examples:
         >>> import flows
         >>> input_shape, rng = (3,), random.PRNGKey(0)
-        >>> transformation = flows.serial(
-        ...     flows.MADE(),
+        >>> transformation = flows.Serial(
         ...     flows.Reverse(),
-        ...     flows.MADE(),
         ...     flows.Reverse()
         ... )
         >>> init_fun = flows.Flow(transformation, Normal())

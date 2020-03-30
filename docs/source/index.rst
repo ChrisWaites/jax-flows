@@ -33,7 +33,7 @@ Transformations
 
 .. autofunction:: flows.Sigmoid
 
-.. autofunction:: flows.serial
+.. autofunction:: flows.Serial
 
 Distributions
 -------------

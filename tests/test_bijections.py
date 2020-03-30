@@ -4,8 +4,7 @@ import jax.numpy as np
 import numpy as onp
 from jax import random
 from jax.experimental import stax
-from jax.experimental.stax import Dense, Relu, Tanh
-from jax.nn.initializers import orthogonal, zeros
+from jax.nn.initializers import glorot_normal, normal, orthogonal, zeros
 
 import flows
 
@@ -47,16 +46,16 @@ class Tests(unittest.TestCase):
             test(self, flows.Reverse())
 
     def test_affine_coupling(self):
-        def net(input_shape, hidden_dim=64, act=Relu):
+        def get_affine_coupling_net(input_shape, hidden_dim=64, act=stax.Relu):
             return stax.serial(
-                Dense(hidden_dim, W_init=orthogonal(), b_init=zeros),
+                stax.Dense(hidden_dim, W_init=orthogonal(), b_init=zeros),
                 act,
-                Dense(hidden_dim, W_init=orthogonal(), b_init=zeros),
+                stax.Dense(hidden_dim, W_init=orthogonal(), b_init=zeros),
                 act,
-                Dense(input_shape[-1], W_init=orthogonal(), b_init=zeros),
+                stax.Dense(input_shape[-1], W_init=orthogonal(), b_init=zeros),
             )
 
-        def mask(input_shape):
+        def get_affine_coupling_mask(input_shape):
             mask = onp.zeros(input_shape)
             mask[::2] = 1.0
             return mask
@@ -64,17 +63,55 @@ class Tests(unittest.TestCase):
         inputs = random.uniform(random.PRNGKey(0), (20, 3), minval=-10.0, maxval=10.0)
 
         init_fun = flows.AffineCoupling(
-            net(input_shape=inputs.shape[1:], act=Relu),
-            net(input_shape=inputs.shape[1:], act=Tanh),
-            mask(input_shape=inputs.shape[1:]),
+            get_affine_coupling_net(input_shape=inputs.shape[1:], act=stax.Relu),
+            get_affine_coupling_net(input_shape=inputs.shape[1:], act=stax.Tanh),
+            get_affine_coupling_mask(input_shape=inputs.shape[1:]),
         )
 
         for test in (returns_correct_shape, is_bijective):
             test(self, init_fun, inputs)
 
     def test_made(self):
+        def MaskedDense(out_dim, mask, W_init=glorot_normal(), b_init=normal()):
+            init_fun, _ = stax.Dense(out_dim, W_init, b_init)
+
+            def apply_fun(params, inputs, **kwargs):
+                W, b = params
+                return np.dot(inputs, W * mask) + b
+
+            return init_fun, apply_fun
+
+        def get_made_mask(in_features, out_features, in_flow_features, mask_type=None):
+            if mask_type == "input":
+                in_degrees = np.arange(in_features) % in_flow_features
+            else:
+                in_degrees = np.arange(in_features) % (in_flow_features - 1)
+
+            if mask_type == "output":
+                out_degrees = np.arange(out_features) % in_flow_features - 1
+            else:
+                out_degrees = np.arange(out_features) % (in_flow_features - 1)
+
+            mask = np.expand_dims(out_degrees, -1) >= np.expand_dims(in_degrees, 0)
+            return np.transpose(mask).astype(np.float32)
+
+        inputs = random.uniform(random.PRNGKey(0), (20, 3), minval=-10.0, maxval=10.0)
+
+        input_shape = inputs.shape[1:]
+        num_hidden = 64
+        num_inputs = input_shape[-1]
+
+        input_mask = get_made_mask(num_inputs, num_hidden, num_inputs, mask_type="input")
+        hidden_mask = get_made_mask(num_hidden, num_hidden, num_inputs)
+        output_mask = get_made_mask(num_hidden, num_inputs * 2, num_inputs, mask_type="output")
+
+        joiner = MaskedDense(num_hidden, input_mask)
+        trunk = stax.serial(
+            stax.Relu, MaskedDense(num_hidden, hidden_mask), stax.Relu, MaskedDense(num_inputs * 2, output_mask)
+        )
+
         for test in (returns_correct_shape, is_bijective):
-            test(self, flows.MADE())
+            test(self, flows.MADE(joiner, trunk, num_hidden))
 
     def test_actnorm(self):
         for test in (returns_correct_shape, is_bijective):
@@ -83,7 +120,7 @@ class Tests(unittest.TestCase):
         # Test data-dependent initialization
         inputs = random.uniform(random.PRNGKey(0), (20, 3), minval=-10.0, maxval=10.0)
 
-        init_fun = flows.serial(flows.ActNorm())
+        init_fun = flows.Serial(flows.ActNorm())
         params, direct_fun, inverse_fun = init_fun(random.PRNGKey(0), inputs.shape[1:], inputs=inputs)
 
         expected_weight, expected_bias = np.log(1.0 / (inputs.std(0) + 1e-12)), inputs.mean(0)
@@ -106,7 +143,7 @@ class Tests(unittest.TestCase):
 
     def test_serial(self):
         for test in (returns_correct_shape, is_bijective):
-            test(self, flows.serial(flows.Shuffle(), flows.Shuffle()))
+            test(self, flows.Serial(flows.Shuffle(), flows.Shuffle()))
 
     def test_batchnorm(self):
         for test in (returns_correct_shape, is_bijective):

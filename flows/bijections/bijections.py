@@ -2,22 +2,20 @@ import jax
 import jax.numpy as np
 import numpy as onp
 from jax import random, scipy
-from jax.experimental import stax
-from jax.experimental.stax import Dense, Relu
-from jax.nn.initializers import glorot_normal, normal, orthogonal
+from jax.nn.initializers import orthogonal
 from jax.scipy import linalg
 from jax.scipy.special import expit, logit
 
 # Each layer constructor function returns an init_fun where...
 #
-# init_fun: a fn. taking an rng key and an input shape and returns...
+# init_fun: a function taking an rng key and an input shape and returns...
 #     params: a pytree
-#     direct_fun: a fn. taking params and inputs and returns...
+#     direct_fun: a function taking params and inputs and returns...
 #         outputs: the mapped inputs when the layer is applied
-#         log_det_jacobian: the log-determinant of the jacobian
-#     inverse_fun: a fn. taking params and inputs and returns...
+#         log_det_jacobian: the log of the determinant of the jacobian
+#     inverse_fun: a function taking params and inputs and returns...
 #         outputs: the mapped inputs when the layer is applied
-#         log_det_jacobian: the log-determinant of the jacobian
+#         log_det_jacobian: the log of the determinant of the jacobian
 
 
 def ActNorm():
@@ -250,74 +248,43 @@ def InvertibleLinear():
     return init_fun
 
 
-def Logit():
+def Logit(clip_before_logit=True):
     """Computes the logit function on a set of inputs, with sigmoid function being its inverse.
+
+    Important note: Values passed through this layer are clipped to be within a range computable using 32 bits. This
+    was done in "Cubic-Spline Flows" by Durkan et al. Technically this breaks invertibility, but it avoids
+    inevitable NaNs.
+
+    Args:
+        clip_before_logit: Whether to clip values to range [1e-5, 1 - 1e-5] before being passed through logit.
 
     Returns:
         An ``init_fun`` mapping ``(rng, input_shape)`` to a ``(params, direct_fun, inverse_fun)`` triplet.
     """
-    return Invert(Sigmoid())
+    return Invert(Sigmoid(clip_before_logit))
 
 
-def get_mask(in_features, out_features, in_flow_features, mask_type=None):
-    if mask_type == "input":
-        in_degrees = np.arange(in_features) % in_flow_features
-    else:
-        in_degrees = np.arange(in_features) % (in_flow_features - 1)
-
-    if mask_type == "output":
-        out_degrees = np.arange(out_features) % in_flow_features - 1
-    else:
-        out_degrees = np.arange(out_features) % (in_flow_features - 1)
-
-    mask = np.expand_dims(out_degrees, -1) >= np.expand_dims(in_degrees, 0)
-    return np.transpose(mask).astype(np.float32)
-
-
-def MaskedDense(out_dim, mask, W_init=glorot_normal(), b_init=normal()):
-    init_fun, _ = Dense(out_dim, W_init, b_init)
-
-    def apply_fun(params, inputs, **kwargs):
-        W, b = params
-        return np.dot(inputs, W * mask) + b
-
-    return init_fun, apply_fun
-
-
-def MADE():
+def MADE(joiner, trunk, num_hidden):
     """An implementation of `MADE: Masked Autoencoder for Distribution Estimation`
     (https://arxiv.org/abs/1502.03509).
 
+    Args:
+        joiner: Maps inputs of dimension ``num_inputs`` to ``num_hidden``
+        trunk: Maps inputs of dimension ``num_hidden`` to ``2 * num_inputs``
+        num_hidden: The hidden dimension of choice
+
     Returns:
         An ``init_fun`` mapping ``(rng, input_shape)`` to a ``(params, direct_fun, inverse_fun)`` triplet.
-
-    Examples:
-        >>> num_examples, input_shape, tol = 20, (3,), 1e-4
-        >>> layer_rng, input_rng = random.split(random.PRNGKey(0))
-        >>> inputs = random.uniform(input_rng, (num_examples,) + input_shape)
-        >>> init_fun = MADE()
-        >>> params, direct_fun, inverse_fun = init_fun(layer_rng, input_shape)
-        >>> mapped_inputs = direct_fun(params, inputs)[0]
-        >>> reconstructed_inputs = inverse_fun(params, mapped_inputs)[0]
-        >>> onp.allclose(inputs, reconstructed_inputs, 1e-4)
-        True
     """
 
     def init_fun(rng, input_shape, **kwargs):
-        num_hidden = 64
-        num_inputs = input_shape[-1]
+        joiner_rng, trunk_rng = random.split(rng)
 
-        input_mask = get_mask(num_inputs, num_hidden, num_inputs, mask_type="input")
-        hidden_mask = get_mask(num_hidden, num_hidden, num_inputs)
-        output_mask = get_mask(num_hidden, num_inputs * 2, num_inputs, mask_type="output")
+        joiner_init_fun, joiner_apply_fun = joiner
+        _, joiner_params = joiner_init_fun(joiner_rng, input_shape)
 
-        joiner_init_fun, joiner_apply_fun = MaskedDense(num_hidden, input_mask)
-        _, joiner_params = joiner_init_fun(rng, input_shape)
-
-        trunk_init_fun, trunk_apply_fun = stax.serial(
-            Relu, MaskedDense(num_hidden, hidden_mask), Relu, MaskedDense(num_inputs * 2, output_mask)
-        )
-        _, trunk_params = trunk_init_fun(rng, (num_hidden,))
+        trunk_init_fun, trunk_apply_fun = trunk
+        _, trunk_params = trunk_init_fun(trunk_rng, (num_hidden,))
 
         def direct_fun(params, inputs, **kwargs):
             joiner_params, trunk_params = params
@@ -425,6 +392,9 @@ def Sigmoid(clip_before_logit=True):
     was done in "Cubic-Spline Flows" by Durkan et al. Technically this breaks invertibility, but it avoids
     inevitable NaNs.
 
+    Args:
+        clip_before_logit: Whether to clip values to range [1e-5, 1 - 1e-5] before being passed through logit.
+
     Returns:
         An ``init_fun`` mapping ``(rng, input_shape)`` to a ``(params, direct_fun, inverse_fun)`` triplet.
     """
@@ -450,10 +420,9 @@ def Sigmoid(clip_before_logit=True):
     return init_fun
 
 
-def serial(*init_funs):
+def Serial(*init_funs):
     """
     Args:
-        inputs: An ndarray passed to each bijection's ``init_fun`` for initialization
         *init_funs: Multiple bijections in sequence
 
     Returns:
@@ -463,7 +432,7 @@ def serial(*init_funs):
         >>> num_examples, input_shape, tol = 20, (3,), 1e-4
         >>> layer_rng, input_rng = random.split(random.PRNGKey(0))
         >>> inputs = random.uniform(input_rng, (num_examples,) + input_shape)
-        >>> init_fun = serial(Shuffle(), Shuffle())
+        >>> init_fun = Serial(Shuffle(), Shuffle())
         >>> params, direct_fun, inverse_fun = init_fun(layer_rng, input_shape)
         >>> mapped_inputs = direct_fun(params, inputs)[0]
         >>> reconstructed_inputs = inverse_fun(params, mapped_inputs)[0]
