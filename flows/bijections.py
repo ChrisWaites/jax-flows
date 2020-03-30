@@ -4,6 +4,7 @@ import numpy as onp
 from jax import random, scipy
 from jax.experimental import stax
 from jax.experimental.stax import Dense, Relu
+from jax.nn import normalize
 from jax.nn.initializers import glorot_normal, normal, orthogonal
 from jax.scipy import linalg
 from jax.scipy.special import expit, logit
@@ -286,6 +287,86 @@ def ActNorm():
             return u, log_det_jacobian
 
         return (weight, bias), direct_fun, inverse_fun
+
+    return init_fun
+
+
+def BatchNorm(momentum=0.9):
+    """An implementation of a batch normalization layer from
+    `Density Estimation Using RealNVP` (https://arxiv.org/abs/1605.08803).
+
+    Returns:
+        An ``init_fun`` mapping ``(rng, input_shape)`` to a
+        ``(params, direct_fun, inverse_fun)`` triplet
+    """
+
+    def init_fun(rng, input_shape, **kwargs):
+        log_gamma = np.zeros(input_shape)
+        beta = np.zeros(input_shape)
+        eps = 1e-5
+
+        # Which is better, keeping track of state as an edge case for batchnorm or changing
+        # the entire library's interface to return a layer state and keep functions pure?
+        state = {}
+
+        def direct_fun(params, inputs, **kwargs):
+            evaluation = kwargs.pop("evaluation", None)
+
+            if "running_mean" not in state:
+                state["running_mean"] = np.zeros(input_shape)
+                state["running_var"] = np.ones(input_shape)
+
+            running_mean, running_var = state["running_mean"], state["running_var"]
+            log_gamma, beta = params
+
+            if evaluation:
+                mean = running_mean
+                var = running_var
+            else:
+                batch_mean = inputs.mean(0)
+                batch_var = ((inputs - batch_mean) ** 2.0).mean(0) + eps
+
+                state["batch_mean"] = batch_mean
+                state["batch_var"] = batch_var
+
+                running_mean = (running_mean * momentum) + (batch_mean * (1 - momentum))
+                running_var = (running_var * momentum) + (batch_var * (1 - momentum))
+
+                mean = batch_mean
+                var = batch_var
+
+            x_hat = (inputs - mean) / np.sqrt(var)
+            y = np.exp(log_gamma) * x_hat + beta
+
+            log_det_jacobian = np.full((inputs.shape[0], 1), (log_gamma - 0.5 * np.log(var)).sum())
+
+            return y, log_det_jacobian
+
+        def inverse_fun(params, inputs, **kwargs):
+            evaluation = kwargs.pop("evaluation", None)
+
+            if "running_mean" not in state:
+                state["running_mean"] = np.zeros(input_shape)
+                state["running_var"] = np.ones(input_shape)
+
+            running_mean, running_var = state["running_mean"], state["running_var"]
+            log_gamma, beta = params
+
+            if evaluation:
+                mean = running_mean
+                var = running_var
+            else:
+                mean = state["batch_mean"]
+                var = state["batch_var"]
+
+            x_hat = (inputs - beta) / np.exp(log_gamma)
+            y = x_hat * np.sqrt(var) + mean
+
+            log_det_jacobian = np.full((inputs.shape[0], 1), (-log_gamma + 0.5 * np.log(var)).sum())
+
+            return y, log_det_jacobian
+
+        return (log_gamma, beta), direct_fun, inverse_fun
 
     return init_fun
 

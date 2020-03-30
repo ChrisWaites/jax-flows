@@ -80,8 +80,7 @@ class Tests(unittest.TestCase):
         for test in (returns_correct_shape, is_bijective):
             test(self, flows.ActNorm())
 
-        # ----------------------------- Test data dependent initialization -----------------------------
-
+        # Test data-dependent initialization
         inputs = random.uniform(random.PRNGKey(0), (20, 3), minval=-10.0, maxval=10.0)
 
         init_fun = flows.serial(flows.ActNorm())
@@ -108,3 +107,7 @@ class Tests(unittest.TestCase):
     def test_serial(self):
         for test in (returns_correct_shape, is_bijective):
             test(self, flows.serial(flows.Shuffle(), flows.Shuffle()))
+
+    def test_batchnorm(self):
+        for test in (returns_correct_shape, is_bijective):
+            test(self, flows.BatchNorm())
