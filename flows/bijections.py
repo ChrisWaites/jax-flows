@@ -4,7 +4,6 @@ import numpy as onp
 from jax import random, scipy
 from jax.experimental import stax
 from jax.experimental.stax import Dense, Relu
-from jax.nn import normalize
 from jax.nn.initializers import glorot_normal, normal, orthogonal
 from jax.scipy import linalg
 from jax.scipy.special import expit, logit
@@ -184,7 +183,9 @@ def AffineCoupling(scale, translate, mask):
             t = translate_apply_fun(translate_params, masked_inputs) * (1 - mask)
             s = np.exp(log_s)
 
-            return inputs * s + t, log_s.sum(-1, keepdims=True)
+            log_det_jacobian = log_s.sum(-1, keepdims=True)
+
+            return inputs * s + t, log_det_jacobian
 
         def inverse_fun(params, inputs, **kwargs):
             scale_params, translate_params = params
@@ -194,7 +195,9 @@ def AffineCoupling(scale, translate, mask):
             t = translate_apply_fun(translate_params, masked_inputs) * (1 - mask)
             s = np.exp(-log_s)
 
-            return (inputs - t) * s, log_s.sum(-1, keepdims=True)
+            log_det_jacobian = log_s.sum(-1, keepdims=True)
+
+            return (inputs - t) * s, log_det_jacobian
 
         return (scale_params, translate_params), direct_fun, inverse_fun
 
@@ -275,14 +278,14 @@ def ActNorm():
         def direct_fun(params, inputs, **kwargs):
             weight, bias = params
             u = (inputs - bias) * np.exp(weight)
-            log_det_jacobian = np.expand_dims(weight.sum(-1, keepdims=True), 0).repeat(inputs.shape[0], axis=0)
+            log_det_jacobian = np.full((inputs.shape[0], 1), weight.sum())
 
             return u, log_det_jacobian
 
         def inverse_fun(params, inputs, **kwargs):
             weight, bias = params
             u = inputs * np.exp(-weight) + bias
-            log_det_jacobian = -np.expand_dims(weight.sum(-1, keepdims=True), 0).repeat(inputs.shape[0], axis=0)
+            log_det_jacobian = np.full((inputs.shape[0], 1), -weight.sum())
 
             return u, log_det_jacobian
 
