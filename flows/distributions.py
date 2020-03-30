@@ -7,7 +7,7 @@ from jax import random
 def Normal():
     """
     Returns:
-        A function mapping ``(rng, input_shape)`` to a ``(params, log_pdf, sample)`` triplet
+        A function mapping ``(rng, input_shape)`` to a ``(params, log_pdf, sample)`` triplet.
     """
 
     def init_fun(rng, input_shape):
@@ -32,7 +32,7 @@ def Flow(transformation, prior=Normal()):
             ``(params, log_pdf, sample)`` triplet
 
     Returns:
-        A function mapping ``(rng, input_shape)`` to a ``(params, log_pdf, sample)`` triplet
+        A function mapping ``(rng, input_shape)`` to a ``(params, log_pdf, sample)`` triplet.
 
     Examples:
         >>> import flows

@@ -174,3 +174,7 @@ The implementations are modeled after the work of the following papers:
   > George Papamakarios, Theo Pavlakou, Iain Murray\
   > _arXiv:1705.07057_
 
+  > [Neural Spline Flows](https://arxiv.org/abs/1906.04032)\
+  > Conor Durkan, Artur Bekasov, Iain Murray, George Papamakarios\
+  > _arXiv:1906.04032_
+

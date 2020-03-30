@@ -91,9 +91,9 @@ class Tests(unittest.TestCase):
         self.assertTrue(np.array_equal(params[0][0], expected_weight))
         self.assertTrue(np.array_equal(params[0][1], expected_bias))
 
-    def test_invertible_mm(self):
+    def test_invertible_linear(self):
         for test in (returns_correct_shape, is_bijective):
-            test(self, flows.InvertibleMM())
+            test(self, flows.InvertibleLinear())
 
     def test_sigmoid(self):
         for test in (returns_correct_shape, is_bijective):

@@ -20,136 +20,41 @@ from jax.scipy.special import expit, logit
 #         log_det_jacobian: the log-determinant of the jacobian
 
 
-def Shuffle():
-    """An implementation of a shuffling layer from `Density Estimation Using RealNVP`
-    (https://arxiv.org/abs/1605.08803).
+def ActNorm():
+    """An implementation of an actnorm layer from `Glow: Generative Flow with Invertible 1x1 Convolutions`
+    (https://arxiv.org/abs/1807.03039).
 
     Returns:
-        An ``init_fun`` mapping ``(rng, input_shape)`` to a
-        ``(params, direct_fun, inverse_fun)`` triplet
-
-    Examples:
-        >>> num_examples, input_shape, tol = 20, (3,), 1e-4
-        >>> layer_rng, input_rng = random.split(random.PRNGKey(0))
-        >>> inputs = random.uniform(input_rng, (num_examples,) + input_shape)
-        >>> init_fun = Shuffle()
-        >>> params, direct_fun, inverse_fun = init_fun(layer_rng, input_shape)
-        >>> mapped_inputs = direct_fun(params, inputs)[0]
-        >>> reconstructed_inputs = inverse_fun(params, mapped_inputs)[0]
-        >>> onp.array_equal(inputs, reconstructed_inputs)
-        True
+        An ``init_fun`` mapping ``(rng, input_shape)`` to a ``(params, direct_fun, inverse_fun)`` triplet.
     """
 
     def init_fun(rng, input_shape, **kwargs):
-        perm = random.shuffle(rng, np.arange(onp.prod(input_shape))).reshape(input_shape)
-        inv_perm = np.argsort(perm)
+        inputs = kwargs.pop("inputs", None)
+
+        if not (inputs is None):
+            weight = np.log(1.0 / (inputs.std(0) + 1e-12))
+            bias = inputs.mean(0)
+        else:
+            weight = np.ones(input_shape)
+            bias = np.zeros(input_shape)
 
         def direct_fun(params, inputs, **kwargs):
-            return inputs[:, perm], np.zeros((inputs.shape[0], 1))
+            weight, bias = params
+            u = (inputs - bias) * np.exp(weight)
+            log_det_jacobian = np.full((inputs.shape[0], 1), weight.sum())
+
+            return u, log_det_jacobian
 
         def inverse_fun(params, inputs, **kwargs):
-            return inputs[:, inv_perm], np.zeros((inputs.shape[0], 1))
+            weight, bias = params
+            u = inputs * np.exp(-weight) + bias
+            log_det_jacobian = np.full((inputs.shape[0], 1), -weight.sum())
 
-        return (), direct_fun, inverse_fun
+            return u, log_det_jacobian
 
-    return init_fun
-
-
-def Reverse():
-    """An implementation of a reversing layer from `Density Estimation Using RealNVP`
-    (https://arxiv.org/abs/1605.08803).
-
-    Returns:
-        An ``init_fun`` mapping ``(rng, input_shape)`` to a
-        ``(params, direct_fun, inverse_fun)`` triplet
-
-    Examples:
-        >>> num_examples, input_shape, tol = 20, (3,), 1e-4
-        >>> layer_rng, input_rng = random.split(random.PRNGKey(0))
-        >>> inputs = random.uniform(input_rng, (num_examples,) + input_shape)
-        >>> init_fun = Reverse()
-        >>> params, direct_fun, inverse_fun = init_fun(layer_rng, input_shape)
-        >>> mapped_inputs = direct_fun(params, inputs)[0]
-        >>> reconstructed_inputs = inverse_fun(params, mapped_inputs)[0]
-        >>> onp.array_equal(inputs, reconstructed_inputs)
-        True
-    """
-
-    def init_fun(rng, input_shape, **kwargs):
-        perm = np.array(np.arange(onp.prod(input_shape))[::-1]).reshape(input_shape)
-        inv_perm = np.argsort(perm)
-
-        def direct_fun(params, inputs, **kwargs):
-            return inputs[:, perm], np.zeros((inputs.shape[0], 1))
-
-        def inverse_fun(params, inputs, **kwargs):
-            return inputs[:, inv_perm], np.zeros((inputs.shape[0], 1))
-
-        return (), direct_fun, inverse_fun
+        return (weight, bias), direct_fun, inverse_fun
 
     return init_fun
-
-
-def Invert(bijection):
-    """Inverts a tranformation so that its ``direct_fun`` is its ``inverse_fun``
-    and vice versa.
-
-    Returns:
-        An ``init_fun`` mapping ``(rng, input_shape)`` to a
-        ``(params, direct_fun, inverse_fun)`` triplet
-    """
-
-    def init_fun(rng, input_shape, **kwargs):
-        params, direct_fun, inverse_fun = bijection(rng, input_shape)
-        return params, inverse_fun, direct_fun
-
-    return init_fun
-
-
-def Sigmoid(clip_before_logit=True):
-    """Computes the sigmoid function on a set of inputs, with the
-    logit function being its inverse.
-
-    Important note: Values passed through this layer are clipped to be within
-    a range computable using 32 bits. This was done in "Cubic-Spline Flows"
-    by Durkan et al. Technically this breaks invertibility, but its arguably
-    better than inevitable NaNs.
-
-    Returns:
-        An ``init_fun`` mapping ``(rng, input_shape)`` to a
-        ``(params, direct_fun, inverse_fun)`` triplet
-    """
-
-    def init_fun(rng, input_shape, **kwargs):
-        def direct_fun(params, inputs, **kwargs):
-            inputs = inputs.reshape(inputs.shape[0], -1)
-            log_det_jacobian = np.log(expit(inputs) * (1 - expit(inputs))).sum(-1, keepdims=True)
-
-            return expit(inputs), log_det_jacobian
-
-        def inverse_fun(params, inputs, **kwargs):
-            if clip_before_logit:
-                inputs = np.clip(inputs, 1e-5, 1 - 1e-5)
-
-            inputs = inputs.reshape(inputs.shape[0], -1)
-            log_det_jacobian = -np.log(inputs - (inputs ** 2.0)).sum(-1, keepdims=True)
-
-            return logit(inputs), log_det_jacobian
-
-        return (), direct_fun, inverse_fun
-
-    return init_fun
-
-
-def Logit():
-    """Computes the logit function on a set of inputs, with sigmoid
-    function being its inverse.
-
-    Returns:
-        An ``init_fun`` mapping ``(rng, input_shape)`` to a
-        ``(params, direct_fun, inverse_fun)`` triplet
-    """
-    return Invert(Sigmoid())
 
 
 def AffineCoupling(scale, translate, mask):
@@ -162,8 +67,7 @@ def AffineCoupling(scale, translate, mask):
         mask: A binary mask of shape ``input_shape``
 
     Returns:
-        An ``init_fun`` mapping ``(rng, input_shape)`` to a
-        ``(params, direct_fun, inverse_fun)`` triplet
+        An ``init_fun`` mapping ``(rng, input_shape)`` to a ``(params, direct_fun, inverse_fun)`` triplet.
     """
 
     def init_fun(rng, input_shape, **kwargs):
@@ -204,103 +108,12 @@ def AffineCoupling(scale, translate, mask):
     return init_fun
 
 
-def InvertibleMM():
-    """An implementation of an invertible matrix multiplication
-    layer from `Glow: Generative Flow with Invertible 1x1 Convolutions`
+def BatchNorm(momentum=0.9):
+    """An implementation of a batch normalization layer from `Density Estimation Using RealNVP`
     (https://arxiv.org/abs/1605.08803).
 
     Returns:
-        An ``init_fun`` mapping ``(rng, input_shape)`` to a
-        ``(params, direct_fun, inverse_fun)`` triplet
-    """
-
-    def init_fun(rng, input_shape, **kwargs):
-        W = orthogonal()(rng, (input_shape[-1], input_shape[-1]))
-
-        L_mask = np.tril(np.ones(W.shape), -1)
-        U_mask = L_mask.transpose()
-
-        P, L, U = scipy.linalg.lu(W)
-
-        S = np.diag(U)
-        sign_S = np.sign(S)
-        log_S = np.log(np.abs(S))
-
-        ident = np.eye(L.shape[0])
-
-        def direct_fun(params, inputs, **kwargs):
-            L, U, log_S = params
-
-            L = L * L_mask + ident
-            U = U * U_mask + np.diag(sign_S * np.exp(log_S))
-            W = P @ L @ U
-
-            log_det_jacobian = np.full((inputs.shape[0], 1), log_S.sum())
-
-            return inputs @ W, log_det_jacobian
-
-        def inverse_fun(params, inputs, **kwargs):
-            L, U, log_S = params
-
-            L = L * L_mask + ident
-            U = U * U_mask + np.diag(sign_S * np.exp(log_S))
-            W = P @ L @ U
-
-            log_det_jacobian = np.full((inputs.shape[0], 1), -log_S.sum())
-
-            return inputs @ linalg.inv(W), log_det_jacobian
-
-        return (L, U, log_S), direct_fun, inverse_fun
-
-    return init_fun
-
-
-def ActNorm():
-    """An implementation of an activation normalization layer
-    from `Glow: Generative Flow with Invertible 1x1 Convolutions`
-    (https://arxiv.org/abs/1807.03039).
-
-    Returns:
-        An ``init_fun`` mapping ``(rng, input_shape)`` to a
-        ``(params, direct_fun, inverse_fun)`` triplet
-    """
-
-    def init_fun(rng, input_shape, **kwargs):
-        inputs = kwargs.pop("inputs", None)
-
-        if not (inputs is None):
-            weight = np.log(1.0 / (inputs.std(0) + 1e-12))
-            bias = inputs.mean(0)
-        else:
-            weight = np.ones(input_shape)
-            bias = np.zeros(input_shape)
-
-        def direct_fun(params, inputs, **kwargs):
-            weight, bias = params
-            u = (inputs - bias) * np.exp(weight)
-            log_det_jacobian = np.full((inputs.shape[0], 1), weight.sum())
-
-            return u, log_det_jacobian
-
-        def inverse_fun(params, inputs, **kwargs):
-            weight, bias = params
-            u = inputs * np.exp(-weight) + bias
-            log_det_jacobian = np.full((inputs.shape[0], 1), -weight.sum())
-
-            return u, log_det_jacobian
-
-        return (weight, bias), direct_fun, inverse_fun
-
-    return init_fun
-
-
-def BatchNorm(momentum=0.9):
-    """An implementation of a batch normalization layer from
-    `Density Estimation Using RealNVP` (https://arxiv.org/abs/1605.08803).
-
-    Returns:
-        An ``init_fun`` mapping ``(rng, input_shape)`` to a
-        ``(params, direct_fun, inverse_fun)`` triplet
+        An ``init_fun`` mapping ``(rng, input_shape)`` to a ``(params, direct_fun, inverse_fun)`` triplet.
     """
 
     def init_fun(rng, input_shape, **kwargs):
@@ -374,6 +187,78 @@ def BatchNorm(momentum=0.9):
     return init_fun
 
 
+def Invert(bijection):
+    """Inverts a tranformation so that its ``direct_fun`` is its ``inverse_fun`` and vice versa.
+
+    Returns:
+        An ``init_fun`` mapping ``(rng, input_shape)`` to a ``(params, direct_fun, inverse_fun)`` triplet.
+    """
+
+    def init_fun(rng, input_shape, **kwargs):
+        params, direct_fun, inverse_fun = bijection(rng, input_shape)
+        return params, inverse_fun, direct_fun
+
+    return init_fun
+
+
+def InvertibleLinear():
+    """An implementation of an invertible linear layer from `Glow: Generative Flow with Invertible 1x1 Convolutions`
+    (https://arxiv.org/abs/1605.08803).
+
+    Returns:
+        An ``init_fun`` mapping ``(rng, input_shape)`` to a ``(params, direct_fun, inverse_fun)`` triplet.
+    """
+
+    def init_fun(rng, input_shape, **kwargs):
+        W = orthogonal()(rng, (input_shape[-1], input_shape[-1]))
+
+        L_mask = np.tril(np.ones(W.shape), -1)
+        U_mask = L_mask.transpose()
+
+        P, L, U = scipy.linalg.lu(W)
+
+        S = np.diag(U)
+        sign_S = np.sign(S)
+        log_S = np.log(np.abs(S))
+
+        ident = np.eye(L.shape[0])
+
+        def direct_fun(params, inputs, **kwargs):
+            L, U, log_S = params
+
+            L = L * L_mask + ident
+            U = U * U_mask + np.diag(sign_S * np.exp(log_S))
+            W = P @ L @ U
+
+            log_det_jacobian = np.full((inputs.shape[0], 1), log_S.sum())
+
+            return inputs @ W, log_det_jacobian
+
+        def inverse_fun(params, inputs, **kwargs):
+            L, U, log_S = params
+
+            L = L * L_mask + ident
+            U = U * U_mask + np.diag(sign_S * np.exp(log_S))
+            W = P @ L @ U
+
+            log_det_jacobian = np.full((inputs.shape[0], 1), -log_S.sum())
+
+            return inputs @ linalg.inv(W), log_det_jacobian
+
+        return (L, U, log_S), direct_fun, inverse_fun
+
+    return init_fun
+
+
+def Logit():
+    """Computes the logit function on a set of inputs, with sigmoid function being its inverse.
+
+    Returns:
+        An ``init_fun`` mapping ``(rng, input_shape)`` to a ``(params, direct_fun, inverse_fun)`` triplet.
+    """
+    return Invert(Sigmoid())
+
+
 def get_mask(in_features, out_features, in_flow_features, mask_type=None):
     if mask_type == "input":
         in_degrees = np.arange(in_features) % in_flow_features
@@ -404,8 +289,7 @@ def MADE():
     (https://arxiv.org/abs/1502.03509).
 
     Returns:
-        An ``init_fun`` mapping ``(rng, input_shape)`` to a
-        ``(params, direct_fun, inverse_fun)`` triplet
+        An ``init_fun`` mapping ``(rng, input_shape)`` to a ``(params, direct_fun, inverse_fun)`` triplet.
 
     Examples:
         >>> num_examples, input_shape, tol = 20, (3,), 1e-4
@@ -466,6 +350,106 @@ def MADE():
     return init_fun
 
 
+def Reverse():
+    """An implementation of a reversing layer from `Density Estimation Using RealNVP`
+    (https://arxiv.org/abs/1605.08803).
+
+    Returns:
+        An ``init_fun`` mapping ``(rng, input_shape)`` to a ``(params, direct_fun, inverse_fun)`` triplet.
+
+    Examples:
+        >>> num_examples, input_shape, tol = 20, (3,), 1e-4
+        >>> layer_rng, input_rng = random.split(random.PRNGKey(0))
+        >>> inputs = random.uniform(input_rng, (num_examples,) + input_shape)
+        >>> init_fun = Reverse()
+        >>> params, direct_fun, inverse_fun = init_fun(layer_rng, input_shape)
+        >>> mapped_inputs = direct_fun(params, inputs)[0]
+        >>> reconstructed_inputs = inverse_fun(params, mapped_inputs)[0]
+        >>> onp.array_equal(inputs, reconstructed_inputs)
+        True
+    """
+
+    def init_fun(rng, input_shape, **kwargs):
+        perm = np.array(np.arange(onp.prod(input_shape))[::-1]).reshape(input_shape)
+        inv_perm = np.argsort(perm)
+
+        def direct_fun(params, inputs, **kwargs):
+            return inputs[:, perm], np.zeros((inputs.shape[0], 1))
+
+        def inverse_fun(params, inputs, **kwargs):
+            return inputs[:, inv_perm], np.zeros((inputs.shape[0], 1))
+
+        return (), direct_fun, inverse_fun
+
+    return init_fun
+
+
+def Shuffle():
+    """An implementation of a shuffling layer from `Density Estimation Using RealNVP`
+    (https://arxiv.org/abs/1605.08803).
+
+    Returns:
+        An ``init_fun`` mapping ``(rng, input_shape)`` to a ``(params, direct_fun, inverse_fun)`` triplet.
+
+    Examples:
+        >>> num_examples, input_shape, tol = 20, (3,), 1e-4
+        >>> layer_rng, input_rng = random.split(random.PRNGKey(0))
+        >>> inputs = random.uniform(input_rng, (num_examples,) + input_shape)
+        >>> init_fun = Shuffle()
+        >>> params, direct_fun, inverse_fun = init_fun(layer_rng, input_shape)
+        >>> mapped_inputs = direct_fun(params, inputs)[0]
+        >>> reconstructed_inputs = inverse_fun(params, mapped_inputs)[0]
+        >>> onp.array_equal(inputs, reconstructed_inputs)
+        True
+    """
+
+    def init_fun(rng, input_shape, **kwargs):
+        perm = random.shuffle(rng, np.arange(onp.prod(input_shape))).reshape(input_shape)
+        inv_perm = np.argsort(perm)
+
+        def direct_fun(params, inputs, **kwargs):
+            return inputs[:, perm], np.zeros((inputs.shape[0], 1))
+
+        def inverse_fun(params, inputs, **kwargs):
+            return inputs[:, inv_perm], np.zeros((inputs.shape[0], 1))
+
+        return (), direct_fun, inverse_fun
+
+    return init_fun
+
+
+def Sigmoid(clip_before_logit=True):
+    """Computes the sigmoid function on a set of inputs, with the logit function being its inverse.
+
+    Important note: Values passed through this layer are clipped to be within a range computable using 32 bits. This
+    was done in "Cubic-Spline Flows" by Durkan et al. Technically this breaks invertibility, but it avoids
+    inevitable NaNs.
+
+    Returns:
+        An ``init_fun`` mapping ``(rng, input_shape)`` to a ``(params, direct_fun, inverse_fun)`` triplet.
+    """
+
+    def init_fun(rng, input_shape, **kwargs):
+        def direct_fun(params, inputs, **kwargs):
+            inputs = inputs.reshape(inputs.shape[0], -1)
+            log_det_jacobian = np.log(expit(inputs) * (1 - expit(inputs))).sum(-1, keepdims=True)
+
+            return expit(inputs), log_det_jacobian
+
+        def inverse_fun(params, inputs, **kwargs):
+            if clip_before_logit:
+                inputs = np.clip(inputs, 1e-5, 1 - 1e-5)
+
+            inputs = inputs.reshape(inputs.shape[0], -1)
+            log_det_jacobian = -np.log(inputs - (inputs ** 2.0)).sum(-1, keepdims=True)
+
+            return logit(inputs), log_det_jacobian
+
+        return (), direct_fun, inverse_fun
+
+    return init_fun
+
+
 def serial(*init_funs):
     """
     Args:
@@ -473,8 +457,7 @@ def serial(*init_funs):
         *init_funs: Multiple bijections in sequence
 
     Returns:
-        An ``init_fun`` mapping ``(rng, input_shape)`` to a
-        ``(params, direct_fun, inverse_fun)`` triplet
+        An ``init_fun`` mapping ``(rng, input_shape)`` to a ``(params, direct_fun, inverse_fun)`` triplet.
 
     Examples:
         >>> num_examples, input_shape, tol = 20, (3,), 1e-4

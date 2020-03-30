@@ -17,9 +17,11 @@ Transformations
 
 .. autofunction:: flows.AffineCoupling
 
+.. autofunction:: flows.BatchNorm
+
 .. autofunction:: flows.Invert
 
-.. autofunction:: flows.InvertibleMM
+.. autofunction:: flows.InvertibleLinear
 
 .. autofunction:: flows.Logit
 
