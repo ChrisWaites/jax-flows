@@ -148,9 +148,13 @@ Yay! Check out our [contributing guidelines](https://github.com/ChrisWaites/jax-
 
 ## Inspiration
 
-This repository is largely modeled after the [`pytorch-flows`](https://github.com/ikostrikov/pytorch-flows) repository by [Ilya Kostrikov](https://github.com/ikostrikov) and the [`nf-jax`](https://github.com/ericjang/nf-jax) repository by [Eric Jang](http://evjang.com/).
+This repository is largely modeled after the [`pytorch-flows`](https://github.com/ikostrikov/pytorch-flows) repository by [Ilya Kostrikov](https://github.com/ikostrikov), the [`nf-jax`](https://github.com/ericjang/nf-jax) repository by [Eric Jang](http://evjang.com/), and the [`normalizing-flows`](https://github.com/tonyduan/normalizing-flows) repository by [Tony Duan](https://github.com/tonyduan).
 
 The implementations are modeled after the work of the following papers:
+
+  > [NICE: Non-linear Independent Components Estimation](https://arxiv.org/abs/1410.8516)\
+  > Laurent Dinh, David Krueger, Yoshua Bengio\
+  > _arXiv:1410.8516_
 
   > [Density estimation using Real NVP](https://arxiv.org/abs/1605.08803)\
   > Laurent Dinh, Jascha Sohl-Dickstein, Samy Bengio\
@@ -177,4 +181,14 @@ The implementations are modeled after the work of the following papers:
   > [Neural Spline Flows](https://arxiv.org/abs/1906.04032)\
   > Conor Durkan, Artur Bekasov, Iain Murray, George Papamakarios\
   > _arXiv:1906.04032_
+
+And by association the following surveys:
+
+  > [Normalizing Flows: An Introduction and Review of Current Methods](https://arxiv.org/abs/1908.09257)\
+  > Ivan Kobyzev, Simon Prince, Marcus A. Brubaker\
+  > _arXiv:1908.09257_
+
+  > [Normalizing Flows for Probabilistic Modeling and Inference](https://arxiv.org/abs/1912.02762)\
+  > George Papamakarios, Eric Nalisnick, Danilo Jimenez Rezende, Shakir Mohamed, Balaji Lakshminarayanan\
+  > _arXiv:1912.02762_
 

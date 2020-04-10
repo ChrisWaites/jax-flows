@@ -1,4 +1,5 @@
-research/
+research/dp-flows/out/
+research/archive/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
