@@ -72,42 +72,22 @@ class Tests(unittest.TestCase):
             test(self, init_fun, inputs)
 
     def test_made(self):
-        def MaskedDense(out_dim, mask, W_init=glorot_normal(), b_init=normal()):
-            init_fun, _ = stax.Dense(out_dim, W_init, b_init)
-
-            def apply_fun(params, inputs, **kwargs):
-                W, b = params
-                return np.dot(inputs, W * mask) + b
-
-            return init_fun, apply_fun
-
-        def get_made_mask(in_features, out_features, in_flow_features, mask_type=None):
-            if mask_type == "input":
-                in_degrees = np.arange(in_features) % in_flow_features
-            else:
-                in_degrees = np.arange(in_features) % (in_flow_features - 1)
-
-            if mask_type == "output":
-                out_degrees = np.arange(out_features) % in_flow_features - 1
-            else:
-                out_degrees = np.arange(out_features) % (in_flow_features - 1)
-
-            mask = np.expand_dims(out_degrees, -1) >= np.expand_dims(in_degrees, 0)
-            return np.transpose(mask).astype(np.float32)
-
         inputs = random.uniform(random.PRNGKey(0), (20, 3), minval=-10.0, maxval=10.0)
 
         input_shape = inputs.shape[1:]
         num_hidden = 64
         num_inputs = input_shape[-1]
 
-        input_mask = get_made_mask(num_inputs, num_hidden, num_inputs, mask_type="input")
-        hidden_mask = get_made_mask(num_hidden, num_hidden, num_inputs)
-        output_mask = get_made_mask(num_hidden, num_inputs * 2, num_inputs, mask_type="output")
+        input_mask = flows.get_made_mask(num_inputs, num_hidden, num_inputs, mask_type="input")
+        hidden_mask = flows.get_made_mask(num_hidden, num_hidden, num_inputs)
+        output_mask = flows.get_made_mask(num_hidden, num_inputs * 2, num_inputs, mask_type="output")
 
-        joiner = MaskedDense(num_hidden, input_mask)
+        joiner = flows.MaskedDense(num_hidden, input_mask)
         trunk = stax.serial(
-            stax.Relu, MaskedDense(num_hidden, hidden_mask), stax.Relu, MaskedDense(num_inputs * 2, output_mask)
+            stax.Relu,
+            flows.MaskedDense(num_hidden, hidden_mask),
+            stax.Relu,
+            flows.MaskedDense(num_inputs * 2, output_mask),
         )
 
         for test in (returns_correct_shape, is_bijective):

@@ -1,8 +1,6 @@
-import numpy as np
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-import torch.nn.init as init
+import jax.numpy as np
+import numpy as onp
+from jax.experimental import stax
 
 DEFAULT_MIN_BIN_WIDTH = 1e-3
 DEFAULT_MIN_BIN_HEIGHT = 1e-3
@@ -164,130 +162,115 @@ def RQS(
         return outputs, logabsdet
 
 
-class FCNN(nn.Module):
-    """
-    Simple fully connected neural network.
-    """
-
-    def __init__(self, in_dim, out_dim, hidden_dim):
-        super().__init__()
-        self.network = nn.Sequential(
-            nn.Linear(in_dim, hidden_dim),
-            nn.Tanh(),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.Tanh(),
-            nn.Linear(hidden_dim, out_dim),
-        )
-
-    def forward(self, x):
-        return self.network(x)
+def FCNN(in_dim, out_dim, hidden_dim):
+    return stax.serial(
+        stax.Dense(in_dim, hidden_dim),
+        stax.Tanh(),
+        stax.Dense(hidden_dim, hidden_dim),
+        stax.Tanh(),
+        stax.Dense(hidden_dim, out_dim),
+    )
 
 
-class NeuralSplineAutoregressive(nn.Module):
-    """
-    Neural spline flow, auto-regressive.
-    [Durkan et al. 2019]
-    """
+def NeuralSplineAutoregressive(dim, K=5, B=3, hidden_dim=8, base_network=FCNN):
+    """Neural spline flow auto-regressive from [Durkan et al. 2019]"""
 
-    def __init__(self, dim, K=5, B=3, hidden_dim=8, base_network=FCNN):
-        super().__init__()
-        self.dim = dim
-        self.K = K
-        self.B = B
+    def init_fun(rng, input_shape):
         self.layers = nn.ModuleList()
         self.init_param = nn.Parameter(torch.Tensor(3 * K - 1))
         for i in range(1, dim):
             self.layers += [base_network(i, 3 * K - 1, hidden_dim)]
         self.reset_parameters()
 
-    def reset_parameters(self):
-        init.uniform_(self.init_param, -1 / 2, 1 / 2)
+        def reset_parameters(self):
+            init.uniform_(self.init_param, -1 / 2, 1 / 2)
 
-    def forward(self, x):
-        z = torch.zeros_like(x)
-        log_det = torch.zeros(z.shape[0])
-        for i in range(self.dim):
-            if i == 0:
-                init_param = self.init_param.expand(x.shape[0], 3 * self.K - 1)
-                W, H, D = torch.split(init_param, self.K, dim=1)
-            else:
-                out = self.layers[i - 1](x[:, :i])
-                W, H, D = torch.split(out, self.K, dim=1)
-            W, H = torch.softmax(W, dim=1), torch.softmax(H, dim=1)
-            W, H = 2 * self.B * W, 2 * self.B * H
-            D = F.softplus(D)
-            z[:, i], ld = unconstrained_RQS(x[:, i], W, H, D, inverse=False, tail_bound=self.B)
-            log_det += ld
-        return z, log_det
+        def direct_fun(params, x):
+            z = torch.zeros_like(x)
+            log_det = torch.zeros(z.shape[0])
+            for i in range(self.dim):
+                if i == 0:
+                    init_param = self.init_param.expand(x.shape[0], 3 * self.K - 1)
+                    W, H, D = torch.split(init_param, self.K, dim=1)
+                else:
+                    out = self.layers[i - 1](x[:, :i])
+                    W, H, D = torch.split(out, self.K, dim=1)
+                W, H = torch.softmax(W, dim=1), torch.softmax(H, dim=1)
+                W, H = 2 * self.B * W, 2 * self.B * H
+                D = F.softplus(D)
+                z[:, i], ld = unconstrained_RQS(x[:, i], W, H, D, inverse=False, tail_bound=self.B)
+                log_det += ld
+            return z, log_det
 
-    def inverse(self, z):
-        x = torch.zeros_like(z)
-        log_det = torch.zeros(x.shape[0])
-        for i in range(self.dim):
-            if i == 0:
-                init_param = self.init_param.expand(x.shape[0], 3 * self.K - 1)
-                W, H, D = torch.split(init_param, self.K, dim=1)
-            else:
-                out = self.layers[i - 1](x[:, :i])
-                W, H, D = torch.split(out, self.K, dim=1)
-            W, H = torch.softmax(W, dim=1), torch.softmax(H, dim=1)
-            W, H = 2 * self.B * W, 2 * self.B * H
-            D = F.softplus(D)
-            x[:, i], ld = unconstrained_RQS(z[:, i], W, H, D, inverse=True, tail_bound=self.B)
-            log_det += ld
-        return x, log_det
+        def inverse_fun(params, z):
+            x = torch.zeros_like(z)
+            log_det = torch.zeros(x.shape[0])
+            for i in range(self.dim):
+                if i == 0:
+                    init_param = self.init_param.expand(x.shape[0], 3 * self.K - 1)
+                    W, H, D = torch.split(init_param, self.K, dim=1)
+                else:
+                    out = self.layers[i - 1](x[:, :i])
+                    W, H, D = torch.split(out, self.K, dim=1)
+                W, H = torch.softmax(W, dim=1), torch.softmax(H, dim=1)
+                W, H = 2 * self.B * W, 2 * self.B * H
+                D = F.softplus(D)
+                x[:, i], ld = unconstrained_RQS(z[:, i], W, H, D, inverse=True, tail_bound=self.B)
+                log_det += ld
+            return x, log_det
+
+        return (), direct_fun, inverse_fun
+
+    return init_fun
 
 
-class NeuralSplineCoupling(nn.Module):
-    """
-    Neural spline flow, coupling layer.
-    [Durkan et al. 2019]
-    """
+def NeuralSplineCoupling(dim, K=5, B=3, hidden_dim=8, base_network=FCNN):
+    """The neural spline flow coupling layer from [Durkan et al. 2019]"""
 
-    def __init__(self, dim, K=5, B=3, hidden_dim=8, base_network=FCNN):
-        super().__init__()
-        self.dim = dim
-        self.K = K
-        self.B = B
+    def init_fun(rng, input_shape):
         self.f1 = base_network(dim // 2, (3 * K - 1) * dim // 2, hidden_dim)
         self.f2 = base_network(dim // 2, (3 * K - 1) * dim // 2, hidden_dim)
 
-    def forward(self, x):
-        log_det = torch.zeros(x.shape[0])
-        idx = self.dim // 2
-        lower, upper = x[:, :idx], x[:, idx:]
-        out = self.f1(lower).reshape(-1, self.dim // 2, 3 * self.K - 1)
-        W, H, D = torch.split(out, self.K, dim=2)
-        W, H = torch.softmax(W, dim=2), torch.softmax(H, dim=2)
-        W, H = 2 * self.B * W, 2 * self.B * H
-        D = F.softplus(D)
-        upper, ld = unconstrained_RQS(upper, W, H, D, inverse=False, tail_bound=self.B)
-        log_det += torch.sum(ld, dim=1)
-        out = self.f2(upper).reshape(-1, self.dim // 2, 3 * self.K - 1)
-        W, H, D = torch.split(out, self.K, dim=2)
-        W, H = torch.softmax(W, dim=2), torch.softmax(H, dim=2)
-        W, H = 2 * self.B * W, 2 * self.B * H
-        D = F.softplus(D)
-        lower, ld = unconstrained_RQS(lower, W, H, D, inverse=False, tail_bound=self.B)
-        log_det += torch.sum(ld, dim=1)
-        return torch.cat([lower, upper], dim=1), log_det
+        def direct_fun(params, x):
+            log_det = torch.zeros(x.shape[0])
+            idx = self.dim // 2
+            lower, upper = x[:, :idx], x[:, idx:]
+            out = self.f1(lower).reshape(-1, self.dim // 2, 3 * self.K - 1)
+            W, H, D = torch.split(out, self.K, dim=2)
+            W, H = torch.softmax(W, dim=2), torch.softmax(H, dim=2)
+            W, H = 2 * self.B * W, 2 * self.B * H
+            D = F.softplus(D)
+            upper, ld = unconstrained_RQS(upper, W, H, D, inverse=False, tail_bound=self.B)
+            log_det += torch.sum(ld, dim=1)
+            out = self.f2(upper).reshape(-1, self.dim // 2, 3 * self.K - 1)
+            W, H, D = torch.split(out, self.K, dim=2)
+            W, H = torch.softmax(W, dim=2), torch.softmax(H, dim=2)
+            W, H = 2 * self.B * W, 2 * self.B * H
+            D = F.softplus(D)
+            lower, ld = unconstrained_RQS(lower, W, H, D, inverse=False, tail_bound=self.B)
+            log_det += torch.sum(ld, dim=1)
+            return torch.cat([lower, upper], dim=1), log_det
 
-    def inverse(self, z):
-        log_det = torch.zeros(z.shape[0])
-        idx = self.dim // 2
-        lower, upper = z[:, :idx], z[:, idx:]
-        out = self.f2(upper).reshape(-1, self.dim // 2, 3 * self.K - 1)
-        W, H, D = torch.split(out, self.K, dim=2)
-        W, H = torch.softmax(W, dim=2), torch.softmax(H, dim=2)
-        W, H = 2 * self.B * W, 2 * self.B * H
-        D = F.softplus(D)
-        lower, ld = unconstrained_RQS(lower, W, H, D, inverse=True, tail_bound=self.B)
-        log_det += torch.sum(ld, dim=1)
-        out = self.f1(lower).reshape(-1, self.dim // 2, 3 * self.K - 1)
-        W, H, D = torch.split(out, self.K, dim=2)
-        W, H = torch.softmax(W, dim=2), torch.softmax(H, dim=2)
-        W, H = 2 * self.B * W, 2 * self.B * H
-        D = F.softplus(D)
-        upper, ld = unconstrained_RQS(upper, W, H, D, inverse=True, tail_bound=self.B)
-        log_det += torch.sum(ld, dim=1)
-        return torch.cat([lower, upper], dim=1), log_det
+        def inverse_fun(params, z):
+            log_det = torch.zeros(z.shape[0])
+            idx = self.dim // 2
+            lower, upper = z[:, :idx], z[:, idx:]
+            out = self.f2(upper).reshape(-1, self.dim // 2, 3 * self.K - 1)
+            W, H, D = torch.split(out, self.K, dim=2)
+            W, H = torch.softmax(W, dim=2), torch.softmax(H, dim=2)
+            W, H = 2 * self.B * W, 2 * self.B * H
+            D = F.softplus(D)
+            lower, ld = unconstrained_RQS(lower, W, H, D, inverse=True, tail_bound=self.B)
+            log_det += torch.sum(ld, dim=1)
+            out = self.f1(lower).reshape(-1, self.dim // 2, 3 * self.K - 1)
+            W, H, D = torch.split(out, self.K, dim=2)
+            W, H = torch.softmax(W, dim=2), torch.softmax(H, dim=2)
+            W, H = 2 * self.B * W, 2 * self.B * H
+            D = F.softplus(D)
+            upper, ld = unconstrained_RQS(upper, W, H, D, inverse=True, tail_bound=self.B)
+            log_det += torch.sum(ld, dim=1)
+            return torch.cat([lower, upper], dim=1), log_det
+
+        return (), direct_fun, inverse_fun
+
+    return init_fun

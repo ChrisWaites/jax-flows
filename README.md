@@ -50,10 +50,10 @@ reconstructed_inputs, log_det_jacobian_inverse = inverse_fun(params, inputs)
 assert np.array_equal(inputs, reconstructed_inputs)
 ```
 
-We can construct a sequence of bijections using `flows.serial`. The result is just another bijection, and adheres to the exact same interface.
+We can construct a sequence of bijections using `flows.Serial`. The result is just another bijection, and adheres to the exact same interface.
 
 ```python
-init_fun = flows.serial(
+init_fun = flows.Serial(
     flows.AffineCoupling()
     flows.InvertibleLinear(),
     flows.ActNorm(),
@@ -83,7 +83,7 @@ samples = sample(rng, params, num_samples)
 Under this definition, a normalizing flow model is just a `distribution`. But to retrieve one, we have to give it a `bijection` and another `distribution` to act as a prior.
 
 ```python
-bijection = flows.serial(
+bijection = flows.Serial(
     flows.AffineCoupling(),
     flows.InvertibleLinear(),
     flows.ActNorm()

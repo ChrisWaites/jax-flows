@@ -1,5 +1,5 @@
 import math
-from rdp_accountant import compute_rdp, get_privacy_spent
+from .rdp_accountant import compute_rdp, get_privacy_spent
 
 
 def epsilon(N, batch_size, noise_multiplier, iterations, delta=1e-5):
