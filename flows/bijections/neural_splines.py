@@ -1,6 +1,7 @@
 import jax.numpy as np
 import numpy as onp
 from jax.experimental import stax
+from jax import nn, random, ops
 
 DEFAULT_MIN_BIN_WIDTH = 1e-3
 DEFAULT_MIN_BIN_HEIGHT = 1e-3
@@ -8,8 +9,8 @@ DEFAULT_MIN_DERIVATIVE = 1e-3
 
 
 def searchsorted(bin_locations, inputs, eps=1e-6):
-    bin_locations[..., -1] += eps
-    return torch.sum(inputs[..., None] >= bin_locations, dim=-1) - 1
+    bin_locations = ops.index_add(bin_locations, ops.index[..., -1], eps) # bin_locations[..., -1] += eps
+    return np.sum(inputs[..., None] >= bin_locations, axis=-1) - 1
 
 
 def unconstrained_RQS(
@@ -23,25 +24,25 @@ def unconstrained_RQS(
     min_bin_height=DEFAULT_MIN_BIN_HEIGHT,
     min_derivative=DEFAULT_MIN_DERIVATIVE,
 ):
-    inside_intvl_mask = (inputs >= -tail_bound) & (inputs <= tail_bound)
-    outside_interval_mask = ~inside_intvl_mask
+    inside_interval_mask = (inputs >= -tail_bound) & (inputs <= tail_bound)
+    outside_interval_mask = ~inside_interval_mask
 
-    outputs = torch.zeros_like(inputs)
-    logabsdet = torch.zeros_like(inputs)
+    outputs = np.zeros_like(inputs)
+    logabsdet = np.zeros_like(inputs)
 
-    unnormalized_derivatives = F.pad(unnormalized_derivatives, pad=(1, 1))
+    unnormalized_derivatives = np.pad(unnormalized_derivatives, [(0, 0)] * (len(unnormalized_derivatives.shape) - 1) + [(1, 1)])
     constant = np.log(np.exp(1 - min_derivative) - 1)
-    unnormalized_derivatives[..., 0] = constant
-    unnormalized_derivatives[..., -1] = constant
+    unnormalized_derivatives = ops.index_update(unnormalized_derivatives, ops.index[..., 0], constant) # unnormalized_derivatives[..., 0] = constant
+    unnormalized_derivatives = ops.index_update(unnormalized_derivatives, ops.index[..., -1], constant) # unnormalized_derivatives[..., -1] = constant
 
-    outputs[outside_interval_mask] = inputs[outside_interval_mask]
-    logabsdet[outside_interval_mask] = 0
+    outputs = ops.index_update(outputs, ops.index[outside_interval_mask], inputs[outside_interval_mask]) # outputs[outside_interval_mask] = inputs[outside_interval_mask]
+    logabsdet = ops.index_update(logabsdet, ops.index[outside_interval_mask], 0) # logabsdet[outside_interval_mask] = 0
 
-    outputs[inside_intvl_mask], logabsdet[inside_intvl_mask] = RQS(
-        inputs=inputs[inside_intvl_mask],
-        unnormalized_widths=unnormalized_widths[inside_intvl_mask, :],
-        unnormalized_heights=unnormalized_heights[inside_intvl_mask, :],
-        unnormalized_derivatives=unnormalized_derivatives[inside_intvl_mask, :],
+    outs, logdets = RQS(
+        inputs=inputs[inside_interval_mask],
+        unnormalized_widths=unnormalized_widths[inside_interval_mask, :],
+        unnormalized_heights=unnormalized_heights[inside_interval_mask, :],
+        unnormalized_derivatives=unnormalized_derivatives[inside_interval_mask, :],
         inverse=inverse,
         left=-tail_bound,
         right=tail_bound,
@@ -51,6 +52,9 @@ def unconstrained_RQS(
         min_bin_height=min_bin_height,
         min_derivative=min_derivative,
     )
+
+    outputs = ops.index_update(outputs, ops.index[inside_interval_mask], outs) # outputs[inside_interval_mask] = outs
+    logabsdet = ops.index_update(logabsdet, ops.index[inside_interval_mask], logdets) # logabsdet[inside_interval_mask] = logdets
 
     return outputs, logabsdet
 
@@ -69,7 +73,7 @@ def RQS(
     min_bin_height=DEFAULT_MIN_BIN_HEIGHT,
     min_derivative=DEFAULT_MIN_DERIVATIVE,
 ):
-    if torch.min(inputs) < left or torch.max(inputs) > right:
+    if np.min(inputs) < left or np.max(inputs) > right:
         raise ValueError("Input outside domain")
 
     num_bins = unnormalized_widths.shape[-1]
@@ -79,24 +83,24 @@ def RQS(
     if min_bin_height * num_bins > 1.0:
         raise ValueError("Minimal bin height too large for the number of bins")
 
-    widths = F.softmax(unnormalized_widths, dim=-1)
+    widths = nn.softmax(unnormalized_widths, axis=-1)
     widths = min_bin_width + (1 - min_bin_width * num_bins) * widths
-    cumwidths = torch.cumsum(widths, dim=-1)
-    cumwidths = F.pad(cumwidths, pad=(1, 0), mode="constant", value=0.0)
+    cumwidths = np.cumsum(widths, axis=-1)
+    cumwidths = np.pad(cumwidths, [(0, 0)] * (len(cumwidths.shape) - 1) + [(1, 0)], mode="constant", constant_values=0.0)
     cumwidths = (right - left) * cumwidths + left
-    cumwidths[..., 0] = left
-    cumwidths[..., -1] = right
+    cumwidths = ops.index_update(cumwidths, ops.index[..., 0], left) # cumwidths[..., 0] = left
+    cumwidths = ops.index_update(cumwidths, ops.index[..., -1], right) # cumwidths[..., -1] = right
     widths = cumwidths[..., 1:] - cumwidths[..., :-1]
 
-    derivatives = min_derivative + F.softplus(unnormalized_derivatives)
+    derivatives = min_derivative + nn.softplus(unnormalized_derivatives)
 
-    heights = F.softmax(unnormalized_heights, dim=-1)
+    heights = nn.softmax(unnormalized_heights, axis=-1)
     heights = min_bin_height + (1 - min_bin_height * num_bins) * heights
-    cumheights = torch.cumsum(heights, dim=-1)
-    cumheights = F.pad(cumheights, pad=(1, 0), mode="constant", value=0.0)
+    cumheights = np.cumsum(heights, axis=-1)
+    cumheights = np.pad(cumheights, [(0, 0)] * (len(cumheights.shape) - 1) + [(1, 0)], mode="constant", constant_values=0.0)
     cumheights = (top - bottom) * cumheights + bottom
-    cumheights[..., 0] = bottom
-    cumheights[..., -1] = top
+    cumheights = ops.index_update(cumheights, ops.index[..., 0], bottom) # cumheights[..., 0] = bottom
+    cumheights = ops.index_update(cumheights, ops.index[..., -1], top) # cumheights[..., -1] = top
     heights = cumheights[..., 1:] - cumheights[..., :-1]
 
     if inverse:
@@ -104,18 +108,19 @@ def RQS(
     else:
         bin_idx = searchsorted(cumwidths, inputs)[..., None]
 
-    input_cumwidths = cumwidths.gather(-1, bin_idx)[..., 0]
-    input_bin_widths = widths.gather(-1, bin_idx)[..., 0]
 
-    input_cumheights = cumheights.gather(-1, bin_idx)[..., 0]
+    input_cumwidths = np.take_along_axis(cumwidths, bin_idx, -1)[..., 0] # cumwidths.gather(-1, bin_idx)[..., 0]
+    input_bin_widths = np.take_along_axis(widths, bin_idx, -1)[..., 0] # widths.gather(-1, bin_idx)[..., 0]
+
+    input_cumheights = np.take_along_axis(cumheights, bin_idx, -1)[..., 0] # cumheights.gather(-1, bin_idx)[..., 0]
     delta = heights / widths
-    input_delta = delta.gather(-1, bin_idx)[..., 0]
+    input_delta = np.take_along_axis(delta, bin_idx, -1)[..., 0] # delta.gather(-1, bin_idx)[..., 0]
 
-    input_derivatives = derivatives.gather(-1, bin_idx)[..., 0]
-    input_derivatives_plus_one = derivatives[..., 1:].gather(-1, bin_idx)
+    input_derivatives = np.take_along_axis(derivatives, bin_idx, -1)[..., 0] # derivatives.gather(-1, bin_idx)[..., 0]
+    input_derivatives_plus_one = np.take_along_axis(derivatives[..., 1:], bin_idx, -1) # derivatives[..., 1:].gather(-1, bin_idx)
     input_derivatives_plus_one = input_derivatives_plus_one[..., 0]
 
-    input_heights = heights.gather(-1, bin_idx)[..., 0]
+    input_heights = np.take_along_axis(heights, bin_idx, -1)[..., 0] # heights.gather(-1, bin_idx)[..., 0]
 
     if inverse:
         a = (inputs - input_cumheights) * (
@@ -126,151 +131,156 @@ def RQS(
         )
         c = -input_delta * (inputs - input_cumheights)
 
-        discriminant = b.pow(2) - 4 * a * c
+        discriminant = np.square(b) - 4 * a * c
         assert (discriminant >= 0).all()
 
-        root = (2 * c) / (-b - torch.sqrt(discriminant))
+        root = (2 * c) / (-b - np.sqrt(discriminant))
         outputs = root * input_bin_widths + input_cumwidths
 
         theta_one_minus_theta = root * (1 - root)
         denominator = input_delta + (
             (input_derivatives + input_derivatives_plus_one - 2 * input_delta) * theta_one_minus_theta
         )
-        derivative_numerator = input_delta.pow(2) * (
-            input_derivatives_plus_one * root.pow(2)
+        derivative_numerator = np.square(input_delta) * (
+            input_derivatives_plus_one * np.square(root)
             + 2 * input_delta * theta_one_minus_theta
-            + input_derivatives * (1 - root).pow(2)
+            + input_derivatives * np.square(1 - root)
         )
-        logabsdet = torch.log(derivative_numerator) - 2 * torch.log(denominator)
+        logabsdet = np.log(derivative_numerator) - 2 * np.log(denominator)
         return outputs, -logabsdet
     else:
         theta = (inputs - input_cumwidths) / input_bin_widths
         theta_one_minus_theta = theta * (1 - theta)
 
-        numerator = input_heights * (input_delta * theta.pow(2) + input_derivatives * theta_one_minus_theta)
+        numerator = input_heights * (input_delta * np.square(theta) + input_derivatives * theta_one_minus_theta)
         denominator = input_delta + (
             (input_derivatives + input_derivatives_plus_one - 2 * input_delta) * theta_one_minus_theta
         )
         outputs = input_cumheights + numerator / denominator
 
-        derivative_numerator = input_delta.pow(2) * (
-            input_derivatives_plus_one * theta.pow(2)
+        derivative_numerator = np.square(input_delta) * (
+            input_derivatives_plus_one * np.square(theta)
             + 2 * input_delta * theta_one_minus_theta
-            + input_derivatives * (1 - theta).pow(2)
+            + input_derivatives * np.square(1 - theta)
         )
-        logabsdet = torch.log(derivative_numerator) - 2 * torch.log(denominator)
+        logabsdet = np.log(derivative_numerator) - 2 * np.log(denominator)
         return outputs, logabsdet
 
 
-def FCNN(in_dim, out_dim, hidden_dim):
+def FCNN(out_dim, hidden_dim):
     return stax.serial(
-        stax.Dense(in_dim, hidden_dim),
-        stax.Tanh(),
-        stax.Dense(hidden_dim, hidden_dim),
-        stax.Tanh(),
-        stax.Dense(hidden_dim, out_dim),
+        stax.Dense(hidden_dim),
+        stax.Tanh,
+        stax.Dense(hidden_dim),
+        stax.Tanh,
+        stax.Dense(out_dim),
     )
 
 
+"""
 def NeuralSplineAutoregressive(dim, K=5, B=3, hidden_dim=8, base_network=FCNN):
-    """Neural spline flow auto-regressive from [Durkan et al. 2019]"""
 
     def init_fun(rng, input_shape):
-        self.layers = nn.ModuleList()
-        self.init_param = nn.Parameter(torch.Tensor(3 * K - 1))
+        layers = nn.ModuleList()
+        init_param = nn.Parameter(np.Tensor(3 * K - 1))
         for i in range(1, dim):
-            self.layers += [base_network(i, 3 * K - 1, hidden_dim)]
-        self.reset_parameters()
+            layers += [base_network(i, 3 * K - 1, hidden_dim)]
+        reset_parameters()
 
-        def reset_parameters(self):
-            init.uniform_(self.init_param, -1 / 2, 1 / 2)
+        def reset_parameters():
+            init.uniform_(init_param, -1 / 2, 1 / 2)
 
         def direct_fun(params, x):
-            z = torch.zeros_like(x)
-            log_det = torch.zeros(z.shape[0])
-            for i in range(self.dim):
+            z = np.zeros_like(x)
+            log_det = np.zeros(z.shape[0])
+            for i in range(dim):
                 if i == 0:
-                    init_param = self.init_param.expand(x.shape[0], 3 * self.K - 1)
-                    W, H, D = torch.split(init_param, self.K, dim=1)
+                    init_param = init_param.expand(x.shape[0], 3 * K - 1)
+                    W, H, D = np.split(init_param, K, dim=1)
                 else:
-                    out = self.layers[i - 1](x[:, :i])
-                    W, H, D = torch.split(out, self.K, dim=1)
-                W, H = torch.softmax(W, dim=1), torch.softmax(H, dim=1)
-                W, H = 2 * self.B * W, 2 * self.B * H
-                D = F.softplus(D)
-                z[:, i], ld = unconstrained_RQS(x[:, i], W, H, D, inverse=False, tail_bound=self.B)
+                    out = layers[i - 1](x[:, :i])
+                    W, H, D = np.split(out, K, dim=1)
+                W, H = nn.softmax(W, axis=1), nn.softmax(H, axis=1)
+                W, H = 2 * B * W, 2 * B * H
+                D = nn.softplus(D)
+                z[:, i], ld = unconstrained_RQS(x[:, i], W, H, D, inverse=False, tail_bound=B)
                 log_det += ld
             return z, log_det
 
         def inverse_fun(params, z):
-            x = torch.zeros_like(z)
-            log_det = torch.zeros(x.shape[0])
-            for i in range(self.dim):
+            x = np.zeros_like(z)
+            log_det = np.zeros(x.shape[0])
+            for i in range(dim):
                 if i == 0:
-                    init_param = self.init_param.expand(x.shape[0], 3 * self.K - 1)
-                    W, H, D = torch.split(init_param, self.K, dim=1)
+                    init_param = init_param.expand(x.shape[0], 3 * K - 1)
+                    W, H, D = np.split(init_param, K, dim=1)
                 else:
-                    out = self.layers[i - 1](x[:, :i])
-                    W, H, D = torch.split(out, self.K, dim=1)
-                W, H = torch.softmax(W, dim=1), torch.softmax(H, dim=1)
-                W, H = 2 * self.B * W, 2 * self.B * H
-                D = F.softplus(D)
-                x[:, i], ld = unconstrained_RQS(z[:, i], W, H, D, inverse=True, tail_bound=self.B)
+                    out = layers[i - 1](x[:, :i])
+                    W, H, D = np.split(out, K, dim=1)
+                W, H = nn.softmax(W, axis=1), nn.softmax(H, axis=1)
+                W, H = 2 * B * W, 2 * B * H
+                D = nn.softplus(D)
+                x[:, i], ld = unconstrained_RQS(z[:, i], W, H, D, inverse=True, tail_bound=B)
                 log_det += ld
             return x, log_det
 
         return (), direct_fun, inverse_fun
 
     return init_fun
+"""
 
 
-def NeuralSplineCoupling(dim, K=5, B=3, hidden_dim=8, base_network=FCNN):
-    """The neural spline flow coupling layer from [Durkan et al. 2019]"""
+def NeuralSplineCoupling(K=5, B=3, hidden_dim=8, network=FCNN):
+    def init_fun(rng, dim):
+        dim = dim[0]
+        f1_rng, f2_rng = random.split(rng)
 
-    def init_fun(rng, input_shape):
-        self.f1 = base_network(dim // 2, (3 * K - 1) * dim // 2, hidden_dim)
-        self.f2 = base_network(dim // 2, (3 * K - 1) * dim // 2, hidden_dim)
+        f1_init_fun, f1_apply_fun = network((3 * K - 1) * dim // 2, hidden_dim)
+        _, f1_params = f1_init_fun(f1_rng, (dim // 2,))
+
+        f2_init_fun, f2_apply_fun = network((3 * K - 1) * dim // 2, hidden_dim)
+        _, f2_params = f2_init_fun(f2_rng, (dim // 2,))
 
         def direct_fun(params, x):
-            log_det = torch.zeros(x.shape[0])
-            idx = self.dim // 2
+            log_det = np.zeros(x.shape[0])
+            idx = dim // 2
             lower, upper = x[:, :idx], x[:, idx:]
-            out = self.f1(lower).reshape(-1, self.dim // 2, 3 * self.K - 1)
-            W, H, D = torch.split(out, self.K, dim=2)
-            W, H = torch.softmax(W, dim=2), torch.softmax(H, dim=2)
-            W, H = 2 * self.B * W, 2 * self.B * H
-            D = F.softplus(D)
-            upper, ld = unconstrained_RQS(upper, W, H, D, inverse=False, tail_bound=self.B)
-            log_det += torch.sum(ld, dim=1)
-            out = self.f2(upper).reshape(-1, self.dim // 2, 3 * self.K - 1)
-            W, H, D = torch.split(out, self.K, dim=2)
-            W, H = torch.softmax(W, dim=2), torch.softmax(H, dim=2)
-            W, H = 2 * self.B * W, 2 * self.B * H
-            D = F.softplus(D)
-            lower, ld = unconstrained_RQS(lower, W, H, D, inverse=False, tail_bound=self.B)
-            log_det += torch.sum(ld, dim=1)
-            return torch.cat([lower, upper], dim=1), log_det
+            out = f1_apply_fun(f1_params, lower).reshape(-1, dim // 2, 3 * K - 1)
+            W, H, D = onp.array_split(out, 3, axis=2)
+            W, H = nn.softmax(W, axis=2), nn.softmax(H, axis=2)
+            W, H = 2 * B * W, 2 * B * H
+            D = nn.softplus(D)
+            upper, ld = unconstrained_RQS(upper, W, H, D, inverse=False, tail_bound=B)
+            log_det += np.sum(ld, axis=1)
+            out = f2_apply_fun(f2_params, upper).reshape(-1, dim // 2, 3 * K - 1)
+            W, H, D = onp.array_split(out, 3, axis=2)
+            W, H = nn.softmax(W, axis=2), nn.softmax(H, axis=2)
+            W, H = 2 * B * W, 2 * B * H
+            D = nn.softplus(D)
+            lower, ld = unconstrained_RQS(lower, W, H, D, inverse=False, tail_bound=B)
+            log_det += np.sum(ld, axis=1)
+            return np.concatenate([lower, upper], axis=1), log_det.reshape(x.shape[0], 1)
 
         def inverse_fun(params, z):
-            log_det = torch.zeros(z.shape[0])
-            idx = self.dim // 2
+            log_det = np.zeros(z.shape[0])
+            idx = dim // 2
             lower, upper = z[:, :idx], z[:, idx:]
-            out = self.f2(upper).reshape(-1, self.dim // 2, 3 * self.K - 1)
-            W, H, D = torch.split(out, self.K, dim=2)
-            W, H = torch.softmax(W, dim=2), torch.softmax(H, dim=2)
-            W, H = 2 * self.B * W, 2 * self.B * H
-            D = F.softplus(D)
-            lower, ld = unconstrained_RQS(lower, W, H, D, inverse=True, tail_bound=self.B)
-            log_det += torch.sum(ld, dim=1)
-            out = self.f1(lower).reshape(-1, self.dim // 2, 3 * self.K - 1)
-            W, H, D = torch.split(out, self.K, dim=2)
-            W, H = torch.softmax(W, dim=2), torch.softmax(H, dim=2)
-            W, H = 2 * self.B * W, 2 * self.B * H
-            D = F.softplus(D)
-            upper, ld = unconstrained_RQS(upper, W, H, D, inverse=True, tail_bound=self.B)
-            log_det += torch.sum(ld, dim=1)
-            return torch.cat([lower, upper], dim=1), log_det
+            out = f2_apply_fun(f2_params, upper).reshape(-1, dim // 2, 3 * K - 1)
+            W, H, D = onp.array_split(out, 3, axis=2)
+            W, H = nn.softmax(W, axis=2), nn.softmax(H, axis=2)
+            W, H = 2 * B * W, 2 * B * H
+            D = nn.softplus(D)
+            lower, ld = unconstrained_RQS(lower, W, H, D, inverse=True, tail_bound=B)
+            log_det += np.sum(ld, axis=1)
+            out = f1_apply_fun(f1_params, lower).reshape(-1, dim // 2, 3 * K - 1)
+            W, H, D = onp.array_split(out, 3, axis=2)
+            W, H = nn.softmax(W, axis=2), nn.softmax(H, axis=2)
+            W, H = 2 * B * W, 2 * B * H
+            D = nn.softplus(D)
+            upper, ld = unconstrained_RQS(upper, W, H, D, inverse=True, tail_bound=B)
+            log_det += np.sum(ld, axis=1)
+            return np.concatenate([lower, upper], axis=1), log_det.reshape(z.shape[0], 1)
 
-        return (), direct_fun, inverse_fun
+        return (f1_params, f2_params), direct_fun, inverse_fun
 
     return init_fun

@@ -25,7 +25,7 @@ from jax.nn.initializers import orthogonal, zeros, glorot_normal, normal
 
 import flows
 from datasets import *
-import dp
+from dp import compute_eps_poisson, compute_eps_uniform
 
 
 def shuffle(rng, arr):
@@ -74,12 +74,15 @@ def main(config):
     weight_decay = float(config['weight_decay'])
 
     _, X, X_val, _ = {
-        'moons': moons.get_datasets,
-        'gaussian': gaussian.get_datasets,
+        'adult': adult.get_datasets,
+        'california': california.get_datasets,
         'checkerboard': checkerboard.get_datasets,
-        'mimic': mimic.get_datasets,
-        'lifesci': lifesci.get_datasets,
         'credit': credit.get_datasets,
+        'gaussian': gaussian.get_datasets,
+        'gowalla', gowalla.get_datasets,
+        'lifesci': lifesci.get_datasets,
+        'mimic': mimic.get_datasets,
+        'moons': moons.get_datasets,
         'spam': spam.get_datasets,
     }[dataset]()
 
@@ -234,13 +237,7 @@ def main(config):
         if iteration % int(.005 * iterations) == 0:
             params = get_params(opt_state)
             loss_i = loss(params, X_val)
-            epsilon_i = dp.epsilon(
-                X.shape[0],
-                minibatch_size,
-                noise_multiplier,
-                iteration,
-                delta,
-            )
+            epsilon_i = compute_eps_uniform(iteration, noise_multiplier, X.shape[0], minibatch_size)
 
             if (private and epsilon_i >= target_epsilon) or np.isnan(loss_i).any():
                 return {'nll': (best_loss, 0.)}

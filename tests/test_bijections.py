@@ -10,7 +10,7 @@ import flows
 
 
 def is_bijective(
-    test, init_fun, inputs=random.uniform(random.PRNGKey(0), (20, 3), minval=-10.0, maxval=10.0), tol=1e-3
+    test, init_fun, inputs=random.uniform(random.PRNGKey(0), (20, 4), minval=-10.0, maxval=10.0), tol=1e-3
 ):
     input_shape = inputs.shape[1:]
     params, direct_fun, inverse_fun = init_fun(random.PRNGKey(0), input_shape)
@@ -22,7 +22,7 @@ def is_bijective(
 
 
 def returns_correct_shape(
-    test, init_fun, inputs=random.uniform(random.PRNGKey(0), (20, 3), minval=-10.0, maxval=10.0)
+    test, init_fun, inputs=random.uniform(random.PRNGKey(0), (20, 4), minval=-10.0, maxval=10.0)
 ):
     input_shape = inputs.shape[1:]
     params, direct_fun, inverse_fun = init_fun(random.PRNGKey(0), input_shape)
@@ -72,7 +72,7 @@ class Tests(unittest.TestCase):
             test(self, init_fun, inputs)
 
     def test_made(self):
-        inputs = random.uniform(random.PRNGKey(0), (20, 3), minval=-10.0, maxval=10.0)
+        inputs = random.uniform(random.PRNGKey(0), (20, 4), minval=-10.0, maxval=10.0)
 
         input_shape = inputs.shape[1:]
         num_hidden = 64
@@ -128,3 +128,30 @@ class Tests(unittest.TestCase):
     def test_batchnorm(self):
         for test in (returns_correct_shape, is_bijective):
             test(self, flows.BatchNorm())
+
+    def test_neural_spline(self):
+        for test in (returns_correct_shape, is_bijective):
+            test(self, flows.NeuralSplineCoupling())
+        """
+        init_fun = flows.NeuralSplineCoupling()
+
+        inputs = random.uniform(random.PRNGKey(0), (20, 2), minval=-10.0, maxval=10.0)
+        tol = 1e-3
+        input_shape = inputs.shape[1:]
+
+        params, direct_fun, inverse_fun = init_fun(random.PRNGKey(0), input_shape)
+
+        # -----------------
+        mapped_inputs = direct_fun(params, inputs)[0]
+        reconstructed_inputs = inverse_fun(params, mapped_inputs)[0]
+
+        self.assertTrue(np.allclose(inputs, reconstructed_inputs, atol=tol))
+        # -----------------
+        mapped_inputs, log_det_jacobian = direct_fun(params, inputs)
+        self.assertTrue(inputs.shape == mapped_inputs.shape)
+        test.assertTrue((inputs.shape[0], 1) == log_det_jacobian.shape)
+
+        mapped_inputs, log_det_jacobian = inverse_fun(params, inputs)
+        test.assertTrue(inputs.shape == mapped_inputs.shape)
+        test.assertTrue((inputs.shape[0], 1) == log_det_jacobian.shape)
+        """
