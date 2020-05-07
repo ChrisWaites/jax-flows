@@ -38,14 +38,14 @@ def ActNorm():
         def direct_fun(params, inputs, **kwargs):
             weight, bias = params
             u = (inputs - bias) * np.exp(weight)
-            log_det_jacobian = np.full((inputs.shape[0], 1), weight.sum())
+            log_det_jacobian = np.full((inputs.shape[0],), weight.sum())
 
             return u, log_det_jacobian
 
         def inverse_fun(params, inputs, **kwargs):
             weight, bias = params
             u = inputs * np.exp(-weight) + bias
-            log_det_jacobian = np.full((inputs.shape[0], 1), -weight.sum())
+            log_det_jacobian = np.full((inputs.shape[0],), -weight.sum())
 
             return u, log_det_jacobian
 
@@ -84,7 +84,7 @@ def AffineCoupling(scale, translate, mask):
             t = translate_apply_fun(translate_params, masked_inputs) * (1 - mask)
             s = np.exp(log_s)
 
-            log_det_jacobian = log_s.sum(-1, keepdims=True)
+            log_det_jacobian = log_s.sum(-1)
 
             return inputs * s + t, log_det_jacobian
 
@@ -96,7 +96,7 @@ def AffineCoupling(scale, translate, mask):
             t = translate_apply_fun(translate_params, masked_inputs) * (1 - mask)
             s = np.exp(-log_s)
 
-            log_det_jacobian = log_s.sum(-1, keepdims=True)
+            log_det_jacobian = log_s.sum(-1)
 
             return (inputs - t) * s, log_det_jacobian
 
@@ -151,7 +151,7 @@ def BatchNorm(momentum=0.9):
             x_hat = (inputs - mean) / np.sqrt(var)
             y = np.exp(log_gamma) * x_hat + beta
 
-            log_det_jacobian = np.full((inputs.shape[0], 1), (log_gamma - 0.5 * np.log(var)).sum())
+            log_det_jacobian = np.full((inputs.shape[0],), (log_gamma - 0.5 * np.log(var)).sum())
 
             return y, log_det_jacobian
 
@@ -175,7 +175,7 @@ def BatchNorm(momentum=0.9):
             x_hat = (inputs - beta) / np.exp(log_gamma)
             y = x_hat * np.sqrt(var) + mean
 
-            log_det_jacobian = np.full((inputs.shape[0], 1), (-log_gamma + 0.5 * np.log(var)).sum())
+            log_det_jacobian = np.full((inputs.shape[0],), (-log_gamma + 0.5 * np.log(var)).sum())
 
             return y, log_det_jacobian
 
@@ -227,7 +227,7 @@ def InvertibleLinear():
             U = U * U_mask + np.diag(sign_S * np.exp(log_S))
             W = P @ L @ U
 
-            log_det_jacobian = np.full((inputs.shape[0], 1), log_S.sum())
+            log_det_jacobian = np.full((inputs.shape[0],), log_S.sum())
 
             return inputs @ W, log_det_jacobian
 
@@ -238,7 +238,7 @@ def InvertibleLinear():
             U = U * U_mask + np.diag(sign_S * np.exp(log_S))
             W = P @ L @ U
 
-            log_det_jacobian = np.full((inputs.shape[0], 1), -log_S.sum())
+            log_det_jacobian = np.full((inputs.shape[0],), -log_S.sum())
 
             return inputs @ linalg.inv(W), log_det_jacobian
 
@@ -287,10 +287,10 @@ def Reverse():
         inv_perm = np.argsort(perm)
 
         def direct_fun(params, inputs, **kwargs):
-            return inputs[:, perm], np.zeros((inputs.shape[0], 1))
+            return inputs[:, perm], np.zeros((inputs.shape[0],))
 
         def inverse_fun(params, inputs, **kwargs):
-            return inputs[:, inv_perm], np.zeros((inputs.shape[0], 1))
+            return inputs[:, inv_perm], np.zeros((inputs.shape[0],))
 
         return (), direct_fun, inverse_fun
 
@@ -321,10 +321,10 @@ def Shuffle():
         inv_perm = np.argsort(perm)
 
         def direct_fun(params, inputs, **kwargs):
-            return inputs[:, perm], np.zeros((inputs.shape[0], 1))
+            return inputs[:, perm], np.zeros((inputs.shape[0],))
 
         def inverse_fun(params, inputs, **kwargs):
-            return inputs[:, inv_perm], np.zeros((inputs.shape[0], 1))
+            return inputs[:, inv_perm], np.zeros((inputs.shape[0],))
 
         return (), direct_fun, inverse_fun
 
@@ -348,7 +348,7 @@ def Sigmoid(clip_before_logit=True):
     def init_fun(rng, input_shape, **kwargs):
         def direct_fun(params, inputs, **kwargs):
             inputs = inputs.reshape(inputs.shape[0], -1)
-            log_det_jacobian = np.log(expit(inputs) * (1 - expit(inputs))).sum(-1, keepdims=True)
+            log_det_jacobian = np.log(expit(inputs) * (1 - expit(inputs))).sum(-1)
 
             return expit(inputs), log_det_jacobian
 
@@ -357,7 +357,7 @@ def Sigmoid(clip_before_logit=True):
                 inputs = np.clip(inputs, 1e-5, 1 - 1e-5)
 
             inputs = inputs.reshape(inputs.shape[0], -1)
-            log_det_jacobian = -np.log(inputs - (inputs ** 2.0)).sum(-1, keepdims=True)
+            log_det_jacobian = -np.log(inputs - (inputs ** 2.0)).sum(-1)
 
             return logit(inputs), log_det_jacobian
 

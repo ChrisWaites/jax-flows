@@ -1,7 +1,7 @@
 import jax.numpy as np
 import numpy as onp
+from jax import nn, ops, random
 from jax.experimental import stax
-from jax import nn, random, ops
 
 DEFAULT_MIN_BIN_WIDTH = 1e-3
 DEFAULT_MIN_BIN_HEIGHT = 1e-3
@@ -9,7 +9,7 @@ DEFAULT_MIN_DERIVATIVE = 1e-3
 
 
 def searchsorted(bin_locations, inputs, eps=1e-6):
-    bin_locations = ops.index_add(bin_locations, ops.index[..., -1], eps) # bin_locations[..., -1] += eps
+    bin_locations = ops.index_add(bin_locations, ops.index[..., -1], eps)  # bin_locations[..., -1] += eps
     return np.sum(inputs[..., None] >= bin_locations, axis=-1) - 1
 
 
@@ -30,13 +30,23 @@ def unconstrained_RQS(
     outputs = np.zeros_like(inputs)
     logabsdet = np.zeros_like(inputs)
 
-    unnormalized_derivatives = np.pad(unnormalized_derivatives, [(0, 0)] * (len(unnormalized_derivatives.shape) - 1) + [(1, 1)])
+    unnormalized_derivatives = np.pad(
+        unnormalized_derivatives, [(0, 0)] * (len(unnormalized_derivatives.shape) - 1) + [(1, 1)]
+    )
     constant = np.log(np.exp(1 - min_derivative) - 1)
-    unnormalized_derivatives = ops.index_update(unnormalized_derivatives, ops.index[..., 0], constant) # unnormalized_derivatives[..., 0] = constant
-    unnormalized_derivatives = ops.index_update(unnormalized_derivatives, ops.index[..., -1], constant) # unnormalized_derivatives[..., -1] = constant
+    unnormalized_derivatives = ops.index_update(
+        unnormalized_derivatives, ops.index[..., 0], constant
+    )  # unnormalized_derivatives[..., 0] = constant
+    unnormalized_derivatives = ops.index_update(
+        unnormalized_derivatives, ops.index[..., -1], constant
+    )  # unnormalized_derivatives[..., -1] = constant
 
-    outputs = ops.index_update(outputs, ops.index[outside_interval_mask], inputs[outside_interval_mask]) # outputs[outside_interval_mask] = inputs[outside_interval_mask]
-    logabsdet = ops.index_update(logabsdet, ops.index[outside_interval_mask], 0) # logabsdet[outside_interval_mask] = 0
+    outputs = ops.index_update(
+        outputs, ops.index[outside_interval_mask], inputs[outside_interval_mask]
+    )  # outputs[outside_interval_mask] = inputs[outside_interval_mask]
+    logabsdet = ops.index_update(
+        logabsdet, ops.index[outside_interval_mask], 0
+    )  # logabsdet[outside_interval_mask] = 0
 
     outs, logdets = RQS(
         inputs=inputs[inside_interval_mask],
@@ -53,8 +63,10 @@ def unconstrained_RQS(
         min_derivative=min_derivative,
     )
 
-    outputs = ops.index_update(outputs, ops.index[inside_interval_mask], outs) # outputs[inside_interval_mask] = outs
-    logabsdet = ops.index_update(logabsdet, ops.index[inside_interval_mask], logdets) # logabsdet[inside_interval_mask] = logdets
+    outputs = ops.index_update(outputs, ops.index[inside_interval_mask], outs)  # outputs[inside_interval_mask] = outs
+    logabsdet = ops.index_update(
+        logabsdet, ops.index[inside_interval_mask], logdets
+    )  # logabsdet[inside_interval_mask] = logdets
 
     return outputs, logabsdet
 
@@ -86,10 +98,12 @@ def RQS(
     widths = nn.softmax(unnormalized_widths, axis=-1)
     widths = min_bin_width + (1 - min_bin_width * num_bins) * widths
     cumwidths = np.cumsum(widths, axis=-1)
-    cumwidths = np.pad(cumwidths, [(0, 0)] * (len(cumwidths.shape) - 1) + [(1, 0)], mode="constant", constant_values=0.0)
+    cumwidths = np.pad(
+        cumwidths, [(0, 0)] * (len(cumwidths.shape) - 1) + [(1, 0)], mode="constant", constant_values=0.0
+    )
     cumwidths = (right - left) * cumwidths + left
-    cumwidths = ops.index_update(cumwidths, ops.index[..., 0], left) # cumwidths[..., 0] = left
-    cumwidths = ops.index_update(cumwidths, ops.index[..., -1], right) # cumwidths[..., -1] = right
+    cumwidths = ops.index_update(cumwidths, ops.index[..., 0], left)  # cumwidths[..., 0] = left
+    cumwidths = ops.index_update(cumwidths, ops.index[..., -1], right)  # cumwidths[..., -1] = right
     widths = cumwidths[..., 1:] - cumwidths[..., :-1]
 
     derivatives = min_derivative + nn.softplus(unnormalized_derivatives)
@@ -97,10 +111,12 @@ def RQS(
     heights = nn.softmax(unnormalized_heights, axis=-1)
     heights = min_bin_height + (1 - min_bin_height * num_bins) * heights
     cumheights = np.cumsum(heights, axis=-1)
-    cumheights = np.pad(cumheights, [(0, 0)] * (len(cumheights.shape) - 1) + [(1, 0)], mode="constant", constant_values=0.0)
+    cumheights = np.pad(
+        cumheights, [(0, 0)] * (len(cumheights.shape) - 1) + [(1, 0)], mode="constant", constant_values=0.0
+    )
     cumheights = (top - bottom) * cumheights + bottom
-    cumheights = ops.index_update(cumheights, ops.index[..., 0], bottom) # cumheights[..., 0] = bottom
-    cumheights = ops.index_update(cumheights, ops.index[..., -1], top) # cumheights[..., -1] = top
+    cumheights = ops.index_update(cumheights, ops.index[..., 0], bottom)  # cumheights[..., 0] = bottom
+    cumheights = ops.index_update(cumheights, ops.index[..., -1], top)  # cumheights[..., -1] = top
     heights = cumheights[..., 1:] - cumheights[..., :-1]
 
     if inverse:
@@ -108,19 +124,20 @@ def RQS(
     else:
         bin_idx = searchsorted(cumwidths, inputs)[..., None]
 
+    input_cumwidths = np.take_along_axis(cumwidths, bin_idx, -1)[..., 0]  # cumwidths.gather(-1, bin_idx)[..., 0]
+    input_bin_widths = np.take_along_axis(widths, bin_idx, -1)[..., 0]  # widths.gather(-1, bin_idx)[..., 0]
 
-    input_cumwidths = np.take_along_axis(cumwidths, bin_idx, -1)[..., 0] # cumwidths.gather(-1, bin_idx)[..., 0]
-    input_bin_widths = np.take_along_axis(widths, bin_idx, -1)[..., 0] # widths.gather(-1, bin_idx)[..., 0]
-
-    input_cumheights = np.take_along_axis(cumheights, bin_idx, -1)[..., 0] # cumheights.gather(-1, bin_idx)[..., 0]
+    input_cumheights = np.take_along_axis(cumheights, bin_idx, -1)[..., 0]  # cumheights.gather(-1, bin_idx)[..., 0]
     delta = heights / widths
-    input_delta = np.take_along_axis(delta, bin_idx, -1)[..., 0] # delta.gather(-1, bin_idx)[..., 0]
+    input_delta = np.take_along_axis(delta, bin_idx, -1)[..., 0]  # delta.gather(-1, bin_idx)[..., 0]
 
-    input_derivatives = np.take_along_axis(derivatives, bin_idx, -1)[..., 0] # derivatives.gather(-1, bin_idx)[..., 0]
-    input_derivatives_plus_one = np.take_along_axis(derivatives[..., 1:], bin_idx, -1) # derivatives[..., 1:].gather(-1, bin_idx)
+    input_derivatives = np.take_along_axis(derivatives, bin_idx, -1)[..., 0]  # derivatives.gather(-1, bin_idx)[..., 0]
+    input_derivatives_plus_one = np.take_along_axis(
+        derivatives[..., 1:], bin_idx, -1
+    )  # derivatives[..., 1:].gather(-1, bin_idx)
     input_derivatives_plus_one = input_derivatives_plus_one[..., 0]
 
-    input_heights = np.take_along_axis(heights, bin_idx, -1)[..., 0] # heights.gather(-1, bin_idx)[..., 0]
+    input_heights = np.take_along_axis(heights, bin_idx, -1)[..., 0]  # heights.gather(-1, bin_idx)[..., 0]
 
     if inverse:
         a = (inputs - input_cumheights) * (
@@ -168,13 +185,7 @@ def RQS(
 
 
 def FCNN(out_dim, hidden_dim):
-    return stax.serial(
-        stax.Dense(hidden_dim),
-        stax.Tanh,
-        stax.Dense(hidden_dim),
-        stax.Tanh,
-        stax.Dense(out_dim),
-    )
+    return stax.serial(stax.Dense(hidden_dim), stax.Tanh, stax.Dense(hidden_dim), stax.Tanh, stax.Dense(out_dim),)
 
 
 """
@@ -259,7 +270,7 @@ def NeuralSplineCoupling(K=5, B=3, hidden_dim=8, network=FCNN):
             D = nn.softplus(D)
             lower, ld = unconstrained_RQS(lower, W, H, D, inverse=False, tail_bound=B)
             log_det += np.sum(ld, axis=1)
-            return np.concatenate([lower, upper], axis=1), log_det.reshape(x.shape[0], 1)
+            return np.concatenate([lower, upper], axis=1), log_det.reshape((x.shape[0],))
 
         def inverse_fun(params, z):
             log_det = np.zeros(z.shape[0])
@@ -279,7 +290,7 @@ def NeuralSplineCoupling(K=5, B=3, hidden_dim=8, network=FCNN):
             D = nn.softplus(D)
             upper, ld = unconstrained_RQS(upper, W, H, D, inverse=True, tail_bound=B)
             log_det += np.sum(ld, axis=1)
-            return np.concatenate([lower, upper], axis=1), log_det.reshape(z.shape[0], 1)
+            return np.concatenate([lower, upper], axis=1), log_det.reshape((z.shape[0],))
 
         return (f1_params, f2_params), direct_fun, inverse_fun
 

@@ -59,7 +59,7 @@ def MADE(joiner, trunk, num_hidden):
             m, a = trunk_apply_fun(trunk_params, h).split(2, 1)
             u = (inputs - m) * np.exp(-a)
 
-            log_det_jacobian = -a.sum(-1, keepdims=True)
+            log_det_jacobian = -a.sum(-1)
 
             return u, log_det_jacobian
 
@@ -74,7 +74,7 @@ def MADE(joiner, trunk, num_hidden):
                     x, jax.ops.index[:, i_col], inputs[:, i_col] * np.exp(a[:, i_col]) + m[:, i_col]
                 )
 
-            log_det_jacobian = -a.sum(-1, keepdims=True)
+            log_det_jacobian = -a.sum(-1)
 
             return x, log_det_jacobian
 

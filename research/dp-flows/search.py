@@ -1,9 +1,10 @@
-from hyperopt import hp, fmin, tpe, space_eval
 from ax.service.managed_loop import optimize
 from train import main as train_and_evaluate_model
-from hyperopt.pyll import stochastic
 
 """
+from hyperopt import hp, fmin, tpe, space_eval
+from hyperopt.pyll import stochastic
+
 space = {
     'x': hp.uniform('x', 0, 1),
     'y': hp.normal('y', 0, 1),
@@ -33,7 +34,7 @@ print stochastic.sample(space)
 parameters = [
     {'name': 'b1', 'type': 'fixed', 'value': 0.9},
     {'name': 'b2', 'type': 'fixed', 'value': 0.999},
-    {'name': 'dataset', 'type': 'fixed', 'value': 'moons'},
+    {'name': 'dataset', 'type': 'fixed', 'value': 'pinwheel'},
     {'name': 'delta', 'type': 'fixed', 'value': 1e-5},
     {'name': 'target_epsilon', 'type': 'fixed', 'value': 5.},
     {'name': 'flow', 'type': 'choice', 'values': ['realnvp', 'glow', 'maf', 'maf-glow']},

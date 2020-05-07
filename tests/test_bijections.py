@@ -4,7 +4,7 @@ import jax.numpy as np
 import numpy as onp
 from jax import random
 from jax.experimental import stax
-from jax.nn.initializers import glorot_normal, normal, orthogonal, zeros
+from jax.nn.initializers import orthogonal, zeros
 
 import flows
 
@@ -29,11 +29,11 @@ def returns_correct_shape(
 
     mapped_inputs, log_det_jacobian = direct_fun(params, inputs)
     test.assertTrue(inputs.shape == mapped_inputs.shape)
-    test.assertTrue((inputs.shape[0], 1) == log_det_jacobian.shape)
+    test.assertTrue((inputs.shape[0],) == log_det_jacobian.shape)
 
     mapped_inputs, log_det_jacobian = inverse_fun(params, inputs)
     test.assertTrue(inputs.shape == mapped_inputs.shape)
-    test.assertTrue((inputs.shape[0], 1) == log_det_jacobian.shape)
+    test.assertTrue((inputs.shape[0],) == log_det_jacobian.shape)
 
 
 class Tests(unittest.TestCase):
