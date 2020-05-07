@@ -180,7 +180,7 @@ def FCNN(out_dim, hidden_dim):
 """
 def NeuralSplineAutoregressive(dim, K=5, B=3, hidden_dim=8, base_network=FCNN):
 
-    def init_fun(rng, input_shape):
+    def init_fun(rng, input_shape, **kwargs):
         layers = nn.ModuleList()
         init_param = nn.Parameter(np.Tensor(3 * K - 1))
         for i in range(1, dim):
@@ -231,7 +231,7 @@ def NeuralSplineAutoregressive(dim, K=5, B=3, hidden_dim=8, base_network=FCNN):
 
 
 def NeuralSplineCoupling(K=5, B=3, hidden_dim=8, network=FCNN):
-    def init_fun(rng, dim):
+    def init_fun(rng, dim, **kwargs):
         dim = dim[0]
         f1_rng, f2_rng = random.split(rng)
 

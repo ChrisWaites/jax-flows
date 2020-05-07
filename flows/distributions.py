@@ -2,6 +2,12 @@ import math
 
 import jax.numpy as np
 from jax import random
+from sklearn import mixture
+from jax import scipy, lax, core, abstract_arrays
+from jax.interpreters.ad import defvjp
+from jax.lib import xla_client
+import jax.scipy.stats.multivariate_normal as mvn
+from jax.scipy.special import logsumexp
 
 
 def Normal():
@@ -19,7 +25,28 @@ def Normal():
             return random.normal(rng, (num_samples,) + input_shape)
 
         return (), log_pdf, sample
+    return init_fun
 
+
+def GMM(means, covariances, weights):
+    def init_fun(rng, input_shape):
+        def log_pdf(params, inputs):
+            cluster_lls = []
+            for log_weight, mean, cov in zip(np.log(weights), means, covs):
+                cluster_lls.append(log_weight + mvn.logpdf(inputs, mean, cov))
+            return np.sum(logsumexp(np.vstack(cluster_lls), axis=0))
+
+        def sample(rng, params, num_samples=1):
+            cluster_samples = []
+            for mean, cov in zip(means, covs):
+                rng, temp_rng = random.split(rng)
+                cluster_sample = random.multivariate_normal(temp_rng, mean, cov, (num_samples,))
+                cluster_samples.append(cluster_sample)
+            samples = np.dstack(cluster_samples)
+            idx = random.categorical(rng, weights, shape=(num_samples, 1, 1))
+            return np.squeeze(np.take_along_axis(samples, idx, -1))
+
+        return (), log_pdf, sample
     return init_fun
 
 

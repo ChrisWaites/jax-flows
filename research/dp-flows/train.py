@@ -15,7 +15,7 @@ import pickle
 import seaborn as sns
 import shutil
 
-from sklearn import datasets, preprocessing
+from sklearn import datasets, preprocessing, mixture
 from sklearn.decomposition import PCA
 
 from jax import jit, grad, partial, random, tree_util, vmap, lax
@@ -26,6 +26,7 @@ from jax.nn.initializers import orthogonal, zeros, glorot_normal, normal
 import flows
 from datasets import *
 from dp import compute_eps_poisson, compute_eps_uniform
+import plotting
 
 
 def shuffle(rng, arr):
@@ -77,16 +78,19 @@ def main(config):
         'adult': adult.get_datasets,
         'california': california.get_datasets,
         'checkerboard': checkerboard.get_datasets,
+        'circles': circles.get_datasets,
         'credit': credit.get_datasets,
         'gaussian': gaussian.get_datasets,
-        'gowalla', gowalla.get_datasets,
+        'gowalla': gowalla.get_datasets,
         'lifesci': lifesci.get_datasets,
         'mimic': mimic.get_datasets,
         'moons': moons.get_datasets,
+        'pinwheel': pinwheel.get_datasets,
         'spam': spam.get_datasets,
     }[dataset]()
 
-    scaler = preprocessing.StandardScaler()
+    #scaler = preprocessing.StandardScaler()
+    scaler = preprocessing.MinMaxScaler((-1., 1.))
     X = np.array(scaler.fit_transform(X))
     X_val = np.array(scaler.transform(X_val))
 
@@ -135,27 +139,49 @@ def main(config):
                 flows.Reverse(),
             ]
     elif flow == 'neural-spline':
-        raise
-    else: # maf-glow
+        for _ in range(num_blocks):
+            modules += [
+                flows.NeuralSplineCoupling(),
+            ]
+    elif flow == 'maf-glow':
         for _ in range(num_blocks):
             modules += [
                 flows.MADE(joiner, trunk, num_hidden),
                 flows.ActNorm(),
                 flows.InvertibleLinear(),
             ]
+    else:
+        raise Exception('Invalid flow: {}'.format(flow))
+
     bijection = flows.Serial(*tuple(modules))
 
-    prior = flows.Normal()
+    """
+    gmm = mixture.GaussianMixture(6)
+    gmm.fit(X)
+    prior = flows.GMM(gmm.means_, gmm.covariances_, gmm.weights_)
 
+    real_gmm_samples = gmm.sample(5000)[0]
+    plt.hist2d(real_gmm_samples[:, 0], real_gmm_samples[:, 1], bins=100)
+    plt.savefig('real.png')
+    plt.clf()
+
+    fake_gmm_samples = sample(random.PRNGKey(0), (), 5000)
+    plt.hist2d(fake_gmm_samples[:, 0], fake_gmm_samples[:, 1], bins=100)
+    plt.savefig('fake.png')
+    plt.clf()
+    """
+
+    prior = flows.Normal()
     init_fun = flows.Flow(bijection, prior)
 
     temp_key, key = random.split(key)
     params, log_pdf, sample = init_fun(temp_key, input_shape)
 
-    #step_size = optimizers.inverse_time_decay(1e-3, 0, .9)
-    opt_init, opt_update, get_params = optimizers.adam(lr)
-    opt_state = opt_init(params)
+    def sched(i):
+        return lr * np.minimum(1., (30000. / i) ** 2.)
 
+    opt_init, opt_update, get_params = optimizers.adam(sched, b1, b2)
+    opt_state = opt_init(params)
 
     def loss(params, inputs):
         return -log_pdf(params, inputs).mean()
@@ -195,6 +221,7 @@ def main(config):
         return opt_update(i, grads, opt_state)
 
 
+    # Plot training data
     if log:
         try:
             os.mkdir('out')
@@ -209,9 +236,12 @@ def main(config):
 
         shutil.copyfile('train.py', output_dir + 'train.py')
 
-        plt.hist2d(X[:, 0], X[:, 1], bins=100, range=((-2, 2), (-2, 2)))
-        plt.savefig(output_dir + 'samples.png')
-        plt.clf()
+        if X.shape[1] == 2:
+            plt.hist2d(X[:, 0], X[:, 1], bins=100, range=((-1.05, 1.05), (-1.05, 1.05)))
+            plt.savefig(output_dir + 'samples.png')
+            plt.clf()
+
+        plotting.plot_marginals(X, output_dir)
 
     best_params, best_loss, best_loss_eps = None, None, None
 
@@ -234,12 +264,13 @@ def main(config):
         else:
             opt_state = update(temp_key, iteration, opt_state, batch)
 
+        # Update progress bar
         if iteration % int(.005 * iterations) == 0:
             params = get_params(opt_state)
             loss_i = loss(params, X_val)
-            epsilon_i = compute_eps_uniform(iteration, noise_multiplier, X.shape[0], minibatch_size)
+            epsilon_i = compute_eps_uniform(iteration, noise_multiplier, X.shape[0], minibatch_size, delta)
 
-            if (private and epsilon_i >= target_epsilon) or np.isnan(loss_i).any():
+            if (private and epsilon_i >= target_epsilon) or iteration > 1000 and np.isnan(loss_i).any():
                 return {'nll': (best_loss, 0.)}
 
             if best_loss is None or loss_i < best_loss:
@@ -247,6 +278,7 @@ def main(config):
 
             pbar.set_description('NLL: {:.4f} Best NLL: {:.4f} ε: {:.4f}'.format(loss_i, best_loss if best_loss else 9999., epsilon_i))
 
+        # Log to output directory
         if log and iteration % int(.05 * iterations) == 0:
             iteration_dir = output_dir + str(iteration) + '/'
             os.mkdir(iteration_dir)
@@ -254,9 +286,12 @@ def main(config):
             temp_key, key = random.split(key)
             X_syn = onp.asarray(sample(temp_key, params, num_samples))
 
-            plt.hist2d(X_syn[:, 0], X_syn[:, 1], bins=100, range=((-2, 2), (-2, 2)))
-            plt.savefig(iteration_dir + 'samples.png')
-            plt.clf()
+            if X_syn.shape[1] == 2:
+                plt.hist2d(X_syn[:, 0], X_syn[:, 1], bins=100, range=((-1.05, 1.05), (-1.05, 1.05)))
+                plt.savefig(iteration_dir + 'samples.png')
+                plt.clf()
+
+            plotting.plot_marginals(X_syn, iteration_dir, overlay=X)
 
             pickle.dump(params, open(iteration_dir + 'params.pickle', 'wb'))
 
