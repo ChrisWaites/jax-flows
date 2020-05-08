@@ -13,7 +13,6 @@ from sklearn import preprocessing
 
 from jax import jit, grad, partial, random, tree_util, vmap, lax
 from jax import numpy as np
-from jax.experimental import optimizers
 
 import dp
 import flow_utils
@@ -25,6 +24,8 @@ def main(config):
     print(dict(config))
     key = random.PRNGKey(0)
 
+    b1 = float(config['b1'])
+    b2 = float(config['b2'])
     delta = float(config['delta'])
     iterations = int(config['iterations'])
     dataset = config['dataset']
@@ -38,7 +39,8 @@ def main(config):
     num_blocks = int(config['num_blocks'])
     num_hidden = int(config['num_hidden'])
     noise_multiplier = float(config['noise_multiplier'])
-    optimizer = config['optimizer']
+    normalization = str(config['normalization']).lower() == 'true'
+    optimizer = config['optimizer'].lower()
     private = str(config['private']).lower() == 'true'
     weight_decay = float(config['weight_decay'])
 
@@ -54,30 +56,28 @@ def main(config):
     num_inputs = input_shape[-1]
 
     # Create flow
-    modules = flow_utils.get_modules(flow, num_blocks, input_shape, num_hidden)
+    modules = flow_utils.get_modules(flow, num_blocks, input_shape, normalization, num_hidden)
     bijection = flows.Serial(*tuple(modules))
     prior = flows.Normal()
-    init_fun = flows.Flow(bijection, prior)
 
+    """
+    from sklearn import mixture
+    gmm = mixture.GaussianMixture(n_components=10)
+    gmm.fit(X)
+    prior = flows.GMM(gmm.means_, gmm.covariances_, gmm.weights_)
+    """
+
+    init_fun = flows.Flow(bijection, prior)
     temp_key, key = random.split(key)
     params, log_pdf, sample = init_fun(temp_key, input_shape)
 
     # Create optimizer
     # sched = lambda i: lr * np.minimum(1., (i / 10000.) ** 2.)
     # sched = lambda i: lr * np.minimum(1., (50000. / i) ** 2.)
-    sched = lambda i: lr * (0.99995) ** i
-    if optimizer.lower() == 'adagrad':
-        opt_init, opt_update, get_params = optimizers.adagrad(sched)
-    elif optimizer.lower() == 'adam':
-        opt_init, opt_update, get_params = optimizers.adam(sched)
-    elif optimizer.lower() == 'momentum':
-        opt_init, opt_update, get_params = optimizers.momentum(sched)
-    elif optimizer.lower() == 'sgd':
-        opt_init, opt_update, get_params = optimizers.sgd(sched)
-    else:
-        raise Exception('Invalid optimizer: {}'.format(optimizer))
+    # sched = lr
+    sched = lambda i: lr * (0.99995 ** i)
+    opt_init, opt_update, get_params = utils.get_optimizer(optimizer, sched, b1, b2)
     opt_state = opt_init(params)
-
 
     def loss(params, inputs):
         return -log_pdf(params, inputs).mean()
@@ -114,38 +114,43 @@ def main(config):
         grads = grad(loss)(params, batch)
         return opt_update(i, grads, opt_state)
 
-
     # Plot training data
     if log:
         # Create experiment directory
-        utils.make_dir('out')
         datetime_str = datetime.now().strftime('%b-%d-%Y_%I:%M:%S_%p')
-        output_dir = 'out/' + datetime_str + '/'
-        utils.make_dir(output_dir)
 
-        # Log config, experiment file, and plot distribution
+        output_dir = ''
+        for ext in ['out', dataset, 'flows', datetime_str]:
+            output_dir += ext + '/'
+            utils.make_dir(output_dir)
+
+        # Log files and plot real distribution
         pickle.dump(dict(config), open(output_dir + 'config.pkl', 'wb'))
         shutil.copyfile('train.py', output_dir + 'train.py')
+        shutil.copyfile('flow_utils.py', output_dir + 'flow_utils.py')
+
         if X.shape[1] == 2:
             utils.plot_dist(X, output_dir + 'real.png')
-        utils.plot_marginals(X, output_dir)
+
+        if X.shape[1] <= 16:
+            utils.plot_marginals(X, output_dir)
 
     best_params, best_loss = None, None
     train_losses, val_losses = [], []
     pbar = tqdm(range(iterations))
     for iteration in pbar:
-        # Calculate current epoch from iteration, etc.
+        # Calculate epoch from iteration
         epoch = iteration // (X.shape[0] // minibatch_size)
         batch_index = iteration % (X.shape[0] // minibatch_size)
         batch_index_start = batch_index * minibatch_size
 
-        # Shuffle dataset and calculate batch
+        # Calculate batch and shuffle dataset if needed
         if batch_index == 0:
             temp_key, key = random.split(key)
             X = random.permutation(temp_key, X)
         batch = X[batch_index_start:batch_index_start+minibatch_size]
 
-        # Perform update from batch
+        # Perform model update
         temp_key, key = random.split(key)
         if private:
             opt_state = private_update(temp_key, iteration, opt_state, batch)
@@ -158,46 +163,49 @@ def main(config):
             train_loss = loss(params, X)
             val_loss = loss(params, X_val)
 
-            epsilon_i = dp.compute_eps_uniform(iteration, noise_multiplier, X.shape[0], minibatch_size, delta)
+            # Exit if NaN occurs
+            if (private and epsilon >= target_epsilon) or iteration > 5000 and np.isnan(train_loss).any():
+                print('Encountered NaN, exiting.')
+                if log:
+                    utils.log_model(key, best_params, sample, X, output_dir + str(best_loss) + '/', train_losses, val_losses)
+                return {'nll': (best_loss, 0.)}
 
             train_losses.append(train_loss)
             val_losses.append(val_loss)
 
-            if (private and epsilon_i >= target_epsilon) or iteration > 1000 and np.isnan(train_loss).any():
-                if log:
-                    pickle.dump(best_params, open(output_dir + 'params.pickle', 'wb'))
-                    utils.plot_loss(train_losses, val_losses, output_dir + 'loss.png')
-                print('Encountered NaN, exiting.')
-                return {'nll': (best_loss, 0.)}
-
+            # Update best model thus far
             if best_loss is None or val_loss < best_loss:
-                bset_params = params
                 best_loss = val_loss
+                best_params = params
 
+            # Calculate privacy loss
+            try:
+                epsilon = dp.compute_eps_uniform(
+                    iteration, noise_multiplier,
+                    X.shape[0], minibatch_size, delta
+                )
+            except:
+                epsilon = dp.epsilon(
+                    X.shape[0], minibatch_size,
+                    noise_multiplier, iteration, delta,
+                )
+
+            # Update progress bar
             pbar_text = 'Train NLL: {:.4f} Val NLL: {:.4f} Best NLL: {:.4f} ε: {:.4f}'.format(
                 train_loss,
                 val_loss,
-                best_loss if best_loss else 9999.,
-                epsilon_i
+                best_loss if best_loss else 99999.,
+                epsilon,
             )
+
             pbar.set_description(pbar_text)
 
         # Log params and plots to output directory
-        if log and iteration % int(.1 * iterations) == 0:
-            iteration_dir = output_dir + str(iteration) + '/'
-            utils.make_dir(iteration_dir)
-
-            temp_key, key = random.split(key)
-            X_syn = onp.asarray(sample(temp_key, params, num_samples))
-
-            pickle.dump(params, open(iteration_dir + 'params.pickle', 'wb'))
-            if X_syn.shape[1] == 2:
-                utils.plot_dist(X_syn, iteration_dir + 'synthetic.png')
-            utils.plot_marginals(X_syn, iteration_dir, overlay=X)
+        if log and iteration % int(.05 * iterations) == 0:
+            utils.log_model(key, params, sample, X, output_dir + str(iteration) + '/')
 
     if log:
-        pickle.dump(best_params, open(output_dir + 'best_params.pickle', 'wb'))
-        utils.plot_loss(train_losses, val_losses, output_dir + 'loss.png')
+        utils.log_model(key, best_params, sample, X, output_dir + str(best_loss) + '/', train_losses, val_losses)
     return {'nll': (best_loss, 0.)}
 
 

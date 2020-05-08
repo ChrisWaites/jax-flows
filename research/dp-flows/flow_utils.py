@@ -24,7 +24,7 @@ def get_affine_coupling_mask(input_shape):
     return mask
 
 
-def get_modules(flow, num_blocks, input_shape, num_hidden=64):
+def get_modules(flow, num_blocks, input_shape, normalization, num_hidden=64):
     num_inputs = input_shape[-1]
 
     affine_coupling_scale = get_affine_coupling_net(input_shape, num_hidden, stax.Relu)
@@ -45,26 +45,51 @@ def get_modules(flow, num_blocks, input_shape, num_hidden=64):
 
     modules = []
     if flow == 'realnvp':
-        mask = affine_coupling_mask
         for _ in range(num_blocks):
             modules += [
-                flows.AffineCoupling(affine_coupling_scale, affine_coupling_translate, mask),
-                flows.ActNorm(),
+                flows.AffineCoupling(
+                    affine_coupling_scale,
+                    affine_coupling_translate,
+                    affine_coupling_mask,
+                ),
             ]
-            mask = 1 - mask
+            if normalization:
+                modules += [
+                    flows.ActNorm(),
+                ]
+            affine_coupling_mask = 1 - affine_coupling_mask
     elif flow == 'glow':
         for _ in range(num_blocks):
             modules += [
-                flows.MADE(made_joiner, made_trunk, num_hidden),
-                flows.ActNorm(),
+                flows.AffineCoupling(
+                    affine_coupling_scale,
+                    affine_coupling_translate,
+                    affine_coupling_mask,
+                ),
+            ]
+            if normalization:
+                modules += [
+                    flows.ActNorm(),
+                ]
+            modules += [
                 flows.InvertibleLinear(),
             ]
+            affine_coupling_mask = 1 - affine_coupling_mask
     elif flow == 'maf':
         for _ in range(num_blocks):
             modules += [
-                flows.MADE(made_joiner, made_trunk, num_hidden),
-                flows.ActNorm(),
-                flows.Reverse(),
+                flows.MADE(
+                    made_joiner,
+                    made_trunk,
+                    num_hidden,
+                ),
+            ]
+            if normalization:
+                modules += [
+                    flows.ActNorm(),
+                ]
+            modules += [
+                flows.Shuffle(),
             ]
     elif flow == 'neural-spline':
         for _ in range(num_blocks):
@@ -74,10 +99,32 @@ def get_modules(flow, num_blocks, input_shape, num_hidden=64):
     elif flow == 'maf-glow':
         for _ in range(num_blocks):
             modules += [
-                flows.MADE(made_joiner, made_trunk, num_hidden),
-                flows.ActNorm(),
+                flows.MADE(
+                    made_joiner,
+                    made_trunk,
+                    num_hidden,
+                ),
+            ]
+            if normalization:
+                modules += [
+                    flows.ActNorm(),
+                ]
+            modules += [
                 flows.InvertibleLinear(),
             ]
+    elif flow == 'custom':
+        for _ in range(num_blocks):
+            modules += [
+                flows.MADE(
+                    made_joiner,
+                    made_trunk,
+                    num_hidden,
+                ),
+                flows.InvertibleLinear(),
+            ]
+        modules += [
+            flows.ActNorm(),
+        ]
     else:
         raise Exception('Invalid flow: {}'.format(flow))
 

@@ -32,8 +32,6 @@ print stochastic.sample(space)
 """
 
 parameters = [
-    {'name': 'b1', 'type': 'fixed', 'value': 0.9},
-    {'name': 'b2', 'type': 'fixed', 'value': 0.999},
     {'name': 'dataset', 'type': 'fixed', 'value': 'pinwheel'},
     {'name': 'delta', 'type': 'fixed', 'value': 1e-5},
     {'name': 'target_epsilon', 'type': 'fixed', 'value': 5.},
@@ -41,12 +39,14 @@ parameters = [
     {'name': 'iterations', 'type': 'fixed', 'value': 50000},
     {'name': 'l2_norm_clip', 'type': 'fixed', 'value': 7.},
     {'name': 'log', 'type': 'fixed', 'value': False},
-    {'name': 'lr', 'type': 'range', 'bounds': [1e-4, 1e-1], 'log_scale': True},
+    {'name': 'lr', 'type': 'range', 'bounds': [1e-6, 1e-2], 'log_scale': True},
     {'name': 'microbatch_size', 'type': 'fixed', 'value': 1},
-    {'name': 'minibatch_size', 'type': 'fixed', 'value': 128}, # 512
-    {'name': 'noise_multiplier', 'type': 'fixed', 'value': 1.9},
+    {'name': 'minibatch_size', 'type': 'range', 'bounds': [1, 128]}, # 512
+    {'name': 'noise_multiplier', 'type': 'fixed', 'value': 0.6},
     {'name': 'num_blocks', 'type': 'range', 'value_type': 'int', 'bounds': [1, 5]},
     {'name': 'num_hidden', 'type': 'range', 'value_type': 'int', 'bounds': [8, 128]},
+    {'name': 'normalization', 'type': 'fixed', 'value': False},
+    {'name': 'optimizer', 'type': 'choice', 'values': ['adam', 'sgd', 'momentum']},
     {'name': 'private', 'type': 'fixed', 'value': True},
     {'name': 'weight_decay', 'type': 'fixed', 'value': 0},
 ]

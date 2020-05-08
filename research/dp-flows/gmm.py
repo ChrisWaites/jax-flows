@@ -10,7 +10,9 @@ import utils
 
 
 def main(config):
-    n_components = 7
+    n_components = 30
+    max_iter = 10
+
     dataset = config['dataset']
     _, X, X_val, _ = utils.get_datasets(dataset)
 
@@ -19,20 +21,22 @@ def main(config):
     X = scaler.fit_transform(X)
     X_val = scaler.transform(X_val)
 
-    GMM = mixture.GaussianMixture(n_components=n_components)
+    GMM = mixture.GaussianMixture(n_components=n_components, max_iter=max_iter)
     GMM.fit(X)
 
     nll = -GMM.score_samples(X_val).mean()
     X_syn = GMM.sample(X.shape[0])[0]
 
-    utils.make_dir('out')
-    utils.make_dir('out/' + dataset)
+    output_dir = ''
+    for ext in ['out', dataset, 'gmm', str(n_components)]:
+        output_dir += ext + '/'
+        utils.make_dir(output_dir)
 
     if X.shape[1] == 2:
-        utils.plot_dist(X, 'out/' + dataset + '/' + 'real.png')
-        utils.plot_dist(X_syn, 'out/' + dataset + '/' + 'synthetic.png')
+        utils.plot_dist(X, output_dir + 'real.png')
+        utils.plot_dist(X_syn, output_dir + 'synthetic.png')
 
-    utils.plot_marginals(X_syn, 'out/' + dataset + '/', overlay=X)
+    utils.plot_marginals(X_syn, output_dir, overlay=X)
 
     return {'nll': (nll, 0.)}
 

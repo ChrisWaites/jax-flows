@@ -85,7 +85,6 @@ def AffineCoupling(scale, translate, mask):
             s = np.exp(log_s)
 
             log_det_jacobian = log_s.sum(-1)
-
             return inputs * s + t, log_det_jacobian
 
         def inverse_fun(params, inputs, **kwargs):
@@ -97,7 +96,6 @@ def AffineCoupling(scale, translate, mask):
             s = np.exp(-log_s)
 
             log_det_jacobian = log_s.sum(-1)
-
             return (inputs - t) * s, log_det_jacobian
 
         return (scale_params, translate_params), direct_fun, inverse_fun
@@ -217,7 +215,6 @@ def InvertibleLinear():
         S = np.diag(U)
         sign_S = np.sign(S)
         log_S = np.log(np.abs(S))
-
         ident = np.eye(L.shape[0])
 
         def direct_fun(params, inputs, **kwargs):
@@ -228,7 +225,6 @@ def InvertibleLinear():
             W = P @ L @ U
 
             log_det_jacobian = np.full((inputs.shape[0],), log_S.sum())
-
             return inputs @ W, log_det_jacobian
 
         def inverse_fun(params, inputs, **kwargs):
@@ -402,14 +398,14 @@ def Serial(*init_funs):
             inverse_funs.append(inverse_fun)
 
         def feed_forward(params, apply_funs, inputs):
-            log_det_jacobians = None
+            total_log_det_jacobian = None
             for apply_fun, param in zip(apply_funs, params):
                 inputs, log_det_jacobian = apply_fun(param, inputs, **kwargs)
-                if log_det_jacobians is None:
-                    log_det_jacobians = log_det_jacobian
+                if total_log_det_jacobian is None:
+                    total_log_det_jacobian = log_det_jacobian
                 else:
-                    log_det_jacobians += log_det_jacobian
-            return inputs, log_det_jacobians
+                    total_log_det_jacobian += log_det_jacobian
+            return inputs, total_log_det_jacobian
 
         def direct_fun(params, inputs, **kwargs):
             return feed_forward(params, direct_funs, inputs)

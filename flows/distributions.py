@@ -15,13 +15,12 @@ def Normal():
     def init_fun(rng, input_shape):
         def log_pdf(params, inputs):
             inputs = inputs.reshape(inputs.shape[0], -1)
-            return (-0.5 * (inputs ** 2.0) - 0.5 * np.log(2 * math.pi)).sum(-1, keepdims=True)
+            return (-0.5 * (inputs ** 2.0) - 0.5 * np.log(2.0 * math.pi)).sum(-1)
 
         def sample(rng, params, num_samples=1):
             return random.normal(rng, (num_samples,) + input_shape)
 
         return (), log_pdf, sample
-
     return init_fun
 
 
@@ -31,7 +30,7 @@ def GMM(means, covariances, weights):
             cluster_lls = []
             for log_weight, mean, cov in zip(np.log(weights), means, covariances):
                 cluster_lls.append(log_weight + mvn.logpdf(inputs, mean, cov))
-            return np.sum(logsumexp(np.vstack(cluster_lls), axis=0))
+            return logsumexp(np.vstack(cluster_lls), axis=0)
 
         def sample(rng, params, num_samples=1):
             cluster_samples = []
@@ -44,7 +43,6 @@ def GMM(means, covariances, weights):
             return np.squeeze(np.take_along_axis(samples, idx, -1))
 
         return (), log_pdf, sample
-
     return init_fun
 
 
@@ -79,12 +77,11 @@ def Flow(transformation, prior=Normal()):
         def log_pdf(params, inputs):
             u, log_det = direct_fun(params, inputs)
             log_probs = prior_log_pdf(prior_params, u)
-            return (log_probs + log_det).sum(-1, keepdims=True)
+            return log_probs + log_det
 
         def sample(rng, params, num_samples=1):
             prior_samples = prior_sample(rng, prior_params, num_samples)
             return inverse_fun(params, prior_samples)[0]
 
         return params, log_pdf, sample
-
     return init_fun
