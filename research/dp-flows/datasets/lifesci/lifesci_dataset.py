@@ -3,16 +3,14 @@ import pandas as pd
 import numpy as np
 
 @utils.constant_seed
-def get_datasets(val_prop=.1, test_prop=.1):
-    df = pd.read_csv('datasets/lifesci/lifesci.csv')
-    X = df.values.astype('float32')
+def get_datasets(val_prop=.1):
+    df_train = pd.read_csv('datasets/lifesci/lifesci_train.csv')
+    X_train = df_train.values.astype('float32')
 
-    np.random.shuffle(X)
+    df_test = pd.read_csv('datasets/lifesci/lifesci_test.csv')
+    X_test = df_test.values.astype('float32')
 
-    val_start = int(X.shape[0] * (1 - (val_prop + test_prop)))
-    val_end = int(X.shape[0] * (1 - test_prop))
-
-    return X, X[:val_start], X[val_start:val_end], X[val_end:]
+    return X_train, X_train, X_test
 
 
 def postprocess(X):

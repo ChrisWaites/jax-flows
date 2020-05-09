@@ -9,7 +9,6 @@ import configparser
 import numpy as onp
 import pickle
 import shutil
-from sklearn import preprocessing
 
 from jax import jit, grad, partial, random, tree_util, vmap, lax
 from jax import numpy as np
@@ -45,11 +44,7 @@ def main(config):
     weight_decay = float(config['weight_decay'])
 
     # Create dataset
-    _, X, X_val, _ = utils.get_datasets(dataset)
-
-    scaler = preprocessing.MinMaxScaler((-1., 1.)) # preprocessing.StandardScaler()
-    X = np.array(scaler.fit_transform(X))
-    X_val = np.array(scaler.transform(X_val))
+    _, X, X_val = utils.get_datasets(dataset)
 
     input_shape = X.shape[1:]
     num_samples = X.shape[0]
@@ -74,8 +69,8 @@ def main(config):
     # Create optimizer
     # sched = lambda i: lr * np.minimum(1., (i / 10000.) ** 2.)
     # sched = lambda i: lr * np.minimum(1., (50000. / i) ** 2.)
-    # sched = lr
-    sched = lambda i: lr * (0.99995 ** i)
+    # sched = lambda i: lr * (0.99995 ** i)
+    sched = lr
     opt_init, opt_update, get_params = utils.get_optimizer(optimizer, sched, b1, b2)
     opt_state = opt_init(params)
 
@@ -125,7 +120,7 @@ def main(config):
             utils.make_dir(output_dir)
 
         # Log files and plot real distribution
-        pickle.dump(dict(config), open(output_dir + 'config.pkl', 'wb'))
+        utils.dump_obj(dict(config), output_dir + 'config.pkl')
         shutil.copyfile('train.py', output_dir + 'train.py')
         shutil.copyfile('flow_utils.py', output_dir + 'flow_utils.py')
 
@@ -136,7 +131,7 @@ def main(config):
             utils.plot_marginals(X, output_dir)
 
     best_params, best_loss = None, None
-    train_losses, val_losses = [], []
+    train_losses, val_losses, epsilons = [], [], []
     pbar = tqdm(range(iterations))
     for iteration in pbar:
         # Calculate epoch from iteration
@@ -144,11 +139,24 @@ def main(config):
         batch_index = iteration % (X.shape[0] // minibatch_size)
         batch_index_start = batch_index * minibatch_size
 
-        # Calculate batch and shuffle dataset if needed
-        if batch_index == 0:
-            temp_key, key = random.split(key)
-            X = random.permutation(temp_key, X)
-        batch = X[batch_index_start:batch_index_start+minibatch_size]
+        # Regular batching
+        #if batch_index == 0:
+        #    temp_key, key = random.split(key)
+        #    X = random.permutation(temp_key, X)
+        #batch = X[batch_index_start:batch_index_start+minibatch_size]
+
+        # Poisson subsampling
+        #temp_key, key = random.split(key)
+        #whether = random.uniform(temp_key, (num_samples,)) < (minibatch_size / num_samples)
+        #batch = X[whether]
+
+        # Uniform subsampling
+        temp_key, key = random.split(key)
+        X = random.permutation(temp_key, X)
+        batch = X[:minibatch_size]
+
+        if batch.shape[0] == 0:
+            continue
 
         # Perform model update
         temp_key, key = random.split(key)
@@ -159,25 +167,6 @@ def main(config):
 
         # Update progress bar
         if iteration % int(.005 * iterations) == 0:
-            params = get_params(opt_state)
-            train_loss = loss(params, X)
-            val_loss = loss(params, X_val)
-
-            # Exit if NaN occurs
-            if (private and epsilon >= target_epsilon) or iteration > 5000 and np.isnan(train_loss).any():
-                print('Encountered NaN, exiting.')
-                if log:
-                    utils.log_model(key, best_params, sample, X, output_dir + str(best_loss) + '/', train_losses, val_losses)
-                return {'nll': (best_loss, 0.)}
-
-            train_losses.append(train_loss)
-            val_losses.append(val_loss)
-
-            # Update best model thus far
-            if best_loss is None or val_loss < best_loss:
-                best_loss = val_loss
-                best_params = params
-
             # Calculate privacy loss
             try:
                 epsilon = dp.compute_eps_uniform(
@@ -189,6 +178,30 @@ def main(config):
                     X.shape[0], minibatch_size,
                     noise_multiplier, iteration, delta,
                 )
+
+            # Calculate losses
+            params = get_params(opt_state)
+            train_loss = loss(params, X)
+            val_loss = loss(params, X_val)
+
+            # Exit if privacy limit reached or NaN occurs
+            if (private and epsilon >= target_epsilon) or iteration > 5000 and np.isnan(train_loss).any():
+                if log:
+                    utils.log(
+                        key, best_params, sample, X,
+                        output_dir + str(best_loss).replace('.', '_') + '/',
+                        train_losses, val_losses, epsilons,
+                    )
+                return {'nll': (best_loss, 0.)}
+
+            train_losses.append(train_loss)
+            val_losses.append(val_loss)
+            epsilons.append(epsilon)
+
+            # Update best model thus far
+            if best_loss is None or val_loss < best_loss:
+                best_loss = val_loss
+                best_params = params
 
             # Update progress bar
             pbar_text = 'Train NLL: {:.4f} Val NLL: {:.4f} Best NLL: {:.4f} ε: {:.4f}'.format(
@@ -202,10 +215,17 @@ def main(config):
 
         # Log params and plots to output directory
         if log and iteration % int(.05 * iterations) == 0:
-            utils.log_model(key, params, sample, X, output_dir + str(iteration) + '/')
+            utils.log(
+                key, params, sample, X,
+                output_dir + str(iteration) + '/',
+            )
 
     if log:
-        utils.log_model(key, best_params, sample, X, output_dir + str(best_loss) + '/', train_losses, val_losses)
+        utils.log(
+            key, best_params, sample, X,
+            output_dir + str(best_loss).replace('.', '_') + '/',
+            train_losses, val_losses, epsilons,
+        )
     return {'nll': (best_loss, 0.)}
 
 

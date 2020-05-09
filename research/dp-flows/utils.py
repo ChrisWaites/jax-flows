@@ -8,6 +8,13 @@ import pickle
 import seaborn as sns
 
 
+def make_dir(path):
+    try:
+        os.mkdir(path)
+    except OSError as error:
+        pass
+
+
 def plot_dist(X, path):
     plt.hist2d(X[:, 0], X[:, 1], bins=100, range=((-1.05, 1.05), (-1.05, 1.05)))
     plt.savefig(path)
@@ -32,18 +39,7 @@ def plot_loss(train_losses, val_losses, path):
     plt.clf()
 
 
-def make_dir(path):
-    try:
-        os.mkdir(path)
-    except OSError as error:
-        pass
-
-
-def log_model(key, params, sample, X, output_dir='.', train_losses=None, val_losses=None):
-    make_dir(output_dir)
-
-    pickle.dump(params, open(output_dir + 'params.pickle', 'wb'))
-
+def plot_samples(key, params, sample, X, output_dir):
     temp_key, key = random.split(key)
     X_syn = onp.asarray(sample(temp_key, params, X.shape[0]))
 
@@ -53,8 +49,21 @@ def log_model(key, params, sample, X, output_dir='.', train_losses=None, val_los
     if X.shape[1] <= 16:
         plot_marginals(X_syn, output_dir, overlay=X)
 
-    if train_losses and val_losses:
-        plot_loss(train_losses, val_losses, output_dir + 'loss.png')
+
+def dump_obj(obj, output_path):
+    pickle.dump(obj, open(output_path, 'wb'))
+
+
+def log(key, params, sample, X, output_dir, train_losses=None, val_losses=None, epsilons=None):
+    make_dir(output_dir)
+    dump_obj(params, output_dir + 'params.pkl')
+    if train_losses:
+        dump_obj(train_losses, output_dir + 'train_losses.pkl')
+    if val_losses:
+        dump_obj(val_losses, output_dir + 'val_losses.pkl')
+    if epsilons:
+        dump_obj(epsilons, output_dir + 'epsilons.pkl')
+    plot_samples(key, params, sample, X, output_dir)
 
 
 def get_optimizer(optimizer, sched, b1=0.9, b2=0.999):
@@ -88,5 +97,3 @@ def get_datasets(dataset):
         'pinwheel': pinwheel.get_datasets,
         'spam': spam.get_datasets,
     }[dataset]()
-
-

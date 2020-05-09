@@ -55,17 +55,12 @@ def perturb_data(x, noise_ratio=0.1, noise_mean=0, noise_stddev=10, seed=0):
 
 
 @utils.constant_seed
-def get_datasets(val_prop=0.1, test_prop=0.1):
-    dataset, _ = make_pinwheel_data(0.3, 0.05, 5, 12000, 0.25)
+def get_datasets(val_prop=0.1):
+    X, _ = make_pinwheel_data(0.3, 0.05, 5, 12000, 0.25)
 
-    val_start = int(dataset.shape[0] * (1 - (test_prop + val_prop)))
-    val_end = int(dataset.shape[0] * (1 - test_prop))
+    val_cutoff = int(X.shape[0] * (1 - val_prop))
 
-    train_dataset = dataset[:val_start]
-    val_dataset = dataset[val_start:val_end]
-    test_dataset = dataset[val_end:]
-
-    return dataset, train_dataset, val_dataset, test_dataset
+    return X, X[:val_cutoff], X[val_cutoff:]
 
 
 def postprocess(X):
