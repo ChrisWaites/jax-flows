@@ -2,10 +2,10 @@ import numpy as np
 from sklearn.preprocessing import MinMaxScaler, OneHotEncoder, LabelBinarizer
 
 def constant_seed(f):
-    def g(*args):
+    def g(*args, **kwargs):
         state = np.random.get_state()
         np.random.seed(0)
-        ret = f(*args)
+        ret = f(*args, **kwargs)
         np.random.set_state(state)
         return ret
     return g

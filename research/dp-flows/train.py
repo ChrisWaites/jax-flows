@@ -25,26 +25,29 @@ def main(config):
 
     b1 = float(config['b1'])
     b2 = float(config['b2'])
-    delta = float(config['delta'])
-    iterations = int(config['iterations'])
+    composition = config['composition'].lower()
     dataset = config['dataset']
-    target_epsilon = float(config['target_epsilon'])
+    delta = float(config['delta'])
+    dirname = config['dirname']
     flow = config['flow']
+    iterations = int(config['iterations'])
     l2_norm_clip = float(config['l2_norm_clip'])
     log = str(config['log']).lower() == 'true'
     lr = float(config['lr'])
     microbatch_size = int(config['microbatch_size'])
     minibatch_size = int(config['minibatch_size'])
-    num_blocks = int(config['num_blocks'])
-    num_hidden = int(config['num_hidden'])
     noise_multiplier = float(config['noise_multiplier'])
     normalization = str(config['normalization']).lower() == 'true'
+    num_blocks = int(config['num_blocks'])
+    num_hidden = int(config['num_hidden'])
     optimizer = config['optimizer'].lower()
     private = str(config['private']).lower() == 'true'
+    split = int(config['split'])
+    target_epsilon = float(config['target_epsilon'])
     weight_decay = float(config['weight_decay'])
 
     # Create dataset
-    _, X, X_val = utils.get_datasets(dataset)
+    _, X, X_val = utils.get_datasets(dataset, split=split)
 
     input_shape = X.shape[1:]
     num_samples = X.shape[0]
@@ -112,27 +115,29 @@ def main(config):
     # Plot training data
     if log:
         # Create experiment directory
-        datetime_str = datetime.now().strftime('%b-%d-%Y_%I:%M:%S_%p')
+        # dirname = datetime.now().strftime('%b-%d-%Y_%I:%M:%S_%p')
 
         output_dir = ''
-        for ext in ['out', dataset, 'flows', datetime_str]:
+        for ext in ['out', dataset, 'flows', str(split), dirname]:
             output_dir += ext + '/'
             utils.make_dir(output_dir)
 
         # Log files and plot real distribution
-        utils.dump_obj(dict(config), output_dir + 'config.pkl')
+        shutil.copyfile('experiment.ini', output_dir + 'experiment.ini')
         shutil.copyfile('train.py', output_dir + 'train.py')
         shutil.copyfile('flow_utils.py', output_dir + 'flow_utils.py')
 
+        """
         if X.shape[1] == 2:
             utils.plot_dist(X, output_dir + 'real.png')
 
         if X.shape[1] <= 16:
             utils.plot_marginals(X, output_dir)
+        """
 
     best_params, best_loss = None, None
     train_losses, val_losses, epsilons = [], [], []
-    pbar = tqdm(range(iterations))
+    pbar = tqdm(range(1, iterations + 1))
     for iteration in pbar:
         # Calculate epoch from iteration
         epoch = iteration // (X.shape[0] // minibatch_size)
@@ -168,16 +173,18 @@ def main(config):
         # Update progress bar
         if iteration % int(.005 * iterations) == 0:
             # Calculate privacy loss
-            try:
+            if composition == 'gdp':
                 epsilon = dp.compute_eps_uniform(
                     iteration, noise_multiplier,
-                    X.shape[0], minibatch_size, delta
+                    X.shape[0], minibatch_size, delta,
                 )
-            except:
+            elif composition == 'ma':
                 epsilon = dp.epsilon(
                     X.shape[0], minibatch_size,
                     noise_multiplier, iteration, delta,
                 )
+            else:
+                raise Exception('Invalid composition: {}'.format(composition))
 
             # Calculate losses
             params = get_params(opt_state)
@@ -186,12 +193,6 @@ def main(config):
 
             # Exit if privacy limit reached or NaN occurs
             if (private and epsilon >= target_epsilon) or iteration > 5000 and np.isnan(train_loss).any():
-                if log:
-                    utils.log(
-                        key, best_params, sample, X,
-                        output_dir + str(best_loss).replace('.', '_') + '/',
-                        train_losses, val_losses, epsilons,
-                    )
                 return {'nll': (best_loss, 0.)}
 
             train_losses.append(train_loss)
@@ -202,6 +203,9 @@ def main(config):
             if best_loss is None or val_loss < best_loss:
                 best_loss = val_loss
                 best_params = params
+
+            if log:
+                utils.log(key, best_params, sample, X, output_dir, train_losses, val_losses, epsilons)
 
             # Update progress bar
             pbar_text = 'Train NLL: {:.4f} Val NLL: {:.4f} Best NLL: {:.4f} ε: {:.4f}'.format(
@@ -221,11 +225,7 @@ def main(config):
             )
 
     if log:
-        utils.log(
-            key, best_params, sample, X,
-            output_dir + str(best_loss).replace('.', '_') + '/',
-            train_losses, val_losses, epsilons,
-        )
+        utils.log(key, best_params, sample, X, output_dir, train_losses, val_losses, epsilons)
     return {'nll': (best_loss, 0.)}
 
 
@@ -234,4 +234,6 @@ if __name__ == '__main__':
     config = configparser.ConfigParser()
     config.read(config_file)
     config = config['DEFAULT']
-    print('Best validation loss: {}'.format(main(config)))
+    for i in range(1, 11):
+        config['split'] = str(i)
+        print('Best validation loss: {}'.format(main(config)))

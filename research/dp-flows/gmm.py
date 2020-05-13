@@ -8,6 +8,7 @@ from sklearn.mixture import _gaussian_mixture
 from jax import numpy as np
 from jax import random
 import numpy as np
+import shutil
 
 import utils
 import dpem
@@ -15,45 +16,56 @@ import flows
 
 
 def main(config):
-    n_components = int(config['n_components'])
     dataset = config['dataset'].lower()
-    split = int(config['split'])
     max_iter = int(config['max_iter'])
+    n_components = int(config['n_components'])
     log = str(config['log']).lower() == 'true'
-    private = str(config['private']).lower() == 'true'
+    dirname = config['dirname']
+    matfiledir = config['matfiledir']
 
-    _, X, X_val, _ = utils.get_datasets(dataset)
+    _, X, X_val = utils.get_datasets(dataset)
+    pca = utils.get_pca(dataset)
+
 
     GMM = mixture.GaussianMixture(n_components=n_components, max_iter=max_iter)
 
-    if private:
-        """
-        init_fun = flows.GMM(*dpem.get_gmm_params())
-        params, log_pdf, sample = init_fun(random.PRNGKey(0), X.shape[1:])
-        nll = -log_pdf(params, X_val).mean()
-        X_syn = sample(random.PRNGKey(0), params, X.shape[0])
-        """
-        GMM.means_, GMM.covariances_, GMM.weights_, epsilon = dpem.get_gmm_params()
-        GMM.precisions_cholesky_ = _gaussian_mixture._compute_precision_cholesky(GMM.covariances_, 'full')
-        nll = -GMM.score_samples(X_val).mean()
-        X_syn = GMM.sample(X.shape[0])[0]
-    else:
-        GMM.fit(X)
-        nll = -GMM.score_samples(X_val).mean()
-        X_syn = GMM.sample(X.shape[0])[0]
-
     output_dir = ''
-    for ext in ['out', dataset, 'gmm', 'private' if private else 'nonprivate', str(n_components)]:
+    for ext in ['out', dataset, 'gmm', dirname]:
         output_dir += ext + '/'
         utils.make_dir(output_dir)
 
+    shutil.copyfile('gmm_experiment.ini', output_dir + 'gmm_experiment.ini')
+
+    epsilons, train_losses, val_losses = [], [], []
+    for result in sorted(dpem.get_all_gmm_params(matfiledir)):
+        epsilon, GMM.means_, GMM.covariances_, GMM.weights_ = result
+        GMM.precisions_cholesky_ = _gaussian_mixture._compute_precision_cholesky(GMM.covariances_, 'full')
+
+        train_loss = -GMM.score_samples(X).mean()
+        val_loss = -GMM.score_samples(X_val).mean()
+        X_syn = GMM.sample(X.shape[0])[0]
+
+        epsilons.append(epsilon)
+        train_losses.append(train_loss)
+        val_losses.append(val_loss)
+
+        utils.plot_dist(pca.transform(X_syn), output_dir + str(epsilon).replace('.', '_') + '.png')
+
+    utils.dump_obj(epsilons, output_dir + 'epsilons.pkl')
+    utils.dump_obj(train_losses, output_dir + 'train_losses.pkl')
+    utils.dump_obj(val_losses, output_dir + 'val_losses.pkl')
+
+    utils.plot_dist(pca.transform(X_val), output_dir + 'real.png')
+
+    """
     if X.shape[1] == 2:
         utils.plot_dist(X, output_dir + 'real.png')
         utils.plot_dist(X_syn, output_dir + 'synthetic.png')
 
     utils.plot_marginals(X_syn, output_dir, overlay=X)
+    """
 
-    return {'nll': (nll, 0.)}
+    return {'nll': (val_loss, 0.)}
 
 
 if __name__ == '__main__':

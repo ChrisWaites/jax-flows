@@ -57,13 +57,13 @@ def dump_obj(obj, output_path):
 def log(key, params, sample, X, output_dir, train_losses=None, val_losses=None, epsilons=None):
     make_dir(output_dir)
     dump_obj(params, output_dir + 'params.pkl')
+
     if train_losses:
         dump_obj(train_losses, output_dir + 'train_losses.pkl')
     if val_losses:
         dump_obj(val_losses, output_dir + 'val_losses.pkl')
     if epsilons:
         dump_obj(epsilons, output_dir + 'epsilons.pkl')
-    plot_samples(key, params, sample, X, output_dir)
 
 
 def get_optimizer(optimizer, sched, b1=0.9, b2=0.999):
@@ -81,7 +81,7 @@ def get_optimizer(optimizer, sched, b1=0.9, b2=0.999):
         raise Exception('Invalid optimizer: {}'.format(optimizer))
 
 
-def get_datasets(dataset):
+def get_datasets(dataset, split=None):
     return {
         'adult': adult.get_datasets,
         'california': california.get_datasets,
@@ -95,5 +95,13 @@ def get_datasets(dataset):
         'moons': moons.get_datasets,
         'olivetti': olivetti.get_datasets,
         'pinwheel': pinwheel.get_datasets,
+        'road': road.get_datasets,
         'spam': spam.get_datasets,
-    }[dataset]()
+        'tamilnadu': tamilnadu.get_datasets,
+    }[dataset](split=split)
+
+
+def get_pca(dataset):
+    return {
+        'lifesci': lifesci.pca,
+    }[dataset]
