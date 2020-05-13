@@ -83,25 +83,30 @@ def get_optimizer(optimizer, sched, b1=0.9, b2=0.999):
 
 def get_datasets(dataset, split=None):
     return {
-        'adult': adult.get_datasets,
-        'california': california.get_datasets,
-        'checkerboard': checkerboard.get_datasets,
-        'circles': circles.get_datasets,
-        'credit': credit.get_datasets,
-        'gaussian': gaussian.get_datasets,
-        'gowalla': gowalla.get_datasets,
-        'lifesci': lifesci.get_datasets,
-        'mimic': mimic.get_datasets,
+        'adult': adult,
+        'bsds300': bsds300,
+        'california': california,
+        'checkerboard': checkerboard,
+        'circles': circles,
+        'credit': credit,
+        'gas': gas,
+        'gaussian': gaussian,
+        'gowalla': gowalla,
+        'hepmass': hepmass,
+        'lifesci': lifesci,
+        'mimic': mimic,
+        'miniboone': miniboone,
         'moons': moons.get_datasets,
-        'olivetti': olivetti.get_datasets,
-        'pinwheel': pinwheel.get_datasets,
-        'road': road.get_datasets,
-        'spam': spam.get_datasets,
-        'tamilnadu': tamilnadu.get_datasets,
-    }[dataset](split=split)
+        'olivetti': olivetti,
+        'pinwheel': pinwheel,
+        'power': power,
+        'road': road,
+        'spam': spam,
+        'tamilnadu': tamilnadu,
+    }[dataset].get_datasets(split=split)
 
 
 def get_pca(dataset):
     return {
-        'lifesci': lifesci.pca,
-    }[dataset]
+        'lifesci': lifesci,
+    }[dataset].pca
