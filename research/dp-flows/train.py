@@ -42,12 +42,11 @@ def main(config):
     num_hidden = int(config['num_hidden'])
     optimizer = config['optimizer'].lower()
     private = str(config['private']).lower() == 'true'
-    split = int(config['split'])
     target_epsilon = float(config['target_epsilon'])
     weight_decay = float(config['weight_decay'])
 
     # Create dataset
-    _, X, X_val = utils.get_datasets(dataset, split=split)
+    _, X, X_val = utils.get_datasets(dataset)
 
     input_shape = X.shape[1:]
     num_samples = X.shape[0]
@@ -118,7 +117,7 @@ def main(config):
         # dirname = datetime.now().strftime('%b-%d-%Y_%I:%M:%S_%p')
 
         output_dir = ''
-        for ext in ['out', dataset, 'flows', str(split), dirname]:
+        for ext in ['out', dataset, 'flows', dirname]:
             output_dir += ext + '/'
             utils.make_dir(output_dir)
 
@@ -234,6 +233,4 @@ if __name__ == '__main__':
     config = configparser.ConfigParser()
     config.read(config_file)
     config = config['DEFAULT']
-    for i in range(1, 11):
-        config['split'] = str(i)
-        print('Best validation loss: {}'.format(main(config)))
+    print('Best validation loss: {}'.format(main(config)))

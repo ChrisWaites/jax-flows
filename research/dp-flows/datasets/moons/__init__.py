@@ -1,1 +1,1 @@
-from .moons_dataset import *
+from .moons import *

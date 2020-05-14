@@ -81,7 +81,7 @@ def get_optimizer(optimizer, sched, b1=0.9, b2=0.999):
         raise Exception('Invalid optimizer: {}'.format(optimizer))
 
 
-def get_datasets(dataset, split=None):
+def get_datasets(dataset):
     return {
         'adult': adult,
         'bsds300': bsds300,
@@ -103,7 +103,7 @@ def get_datasets(dataset, split=None):
         'road': road,
         'spam': spam,
         'tamilnadu': tamilnadu,
-    }[dataset].get_datasets(split=split)
+    }[dataset].get_datasets()
 
 
 def get_pca(dataset):
