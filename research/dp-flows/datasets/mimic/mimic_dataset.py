@@ -6,10 +6,8 @@
 # Note that the last argument "binary/count" determines whether you want to create a binary matrix or a count matrix.
 
 from sklearn import preprocessing
-from torch.utils.data import Dataset
 import numpy as np
 import pandas as pd
-import torch
 from datetime import datetime
 from .. import utils
 
