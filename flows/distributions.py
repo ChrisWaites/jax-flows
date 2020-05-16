@@ -1,7 +1,7 @@
 import math
 
 import jax.numpy as np
-import jax.scipy.stats.multivariate_normal as mvn
+from jax.scipy.stats import multivariate_normal
 from jax import random
 from jax.scipy.special import logsumexp
 
@@ -13,12 +13,15 @@ def Normal():
     """
 
     def init_fun(rng, input_shape):
+        mean = np.zeros(input_shape)
+        covariance = np.eye(np.prod(input_shape))
+
         def log_pdf(params, inputs):
             inputs = inputs.reshape(inputs.shape[0], -1)
-            return (-0.5 * (inputs ** 2.0) - 0.5 * np.log(2.0 * math.pi)).sum(-1)
+            return multivariate_normal.logpdf(inputs, mean, covariance)
 
         def sample(rng, params, num_samples=1):
-            return random.normal(rng, (num_samples,) + input_shape)
+            return random.multivariate_normal(rng, mean, covariance, (num_samples,))
 
         return (), log_pdf, sample
     return init_fun
@@ -29,7 +32,7 @@ def GMM(means, covariances, weights):
         def log_pdf(params, inputs):
             cluster_lls = []
             for log_weight, mean, cov in zip(np.log(weights), means, covariances):
-                cluster_lls.append(log_weight + mvn.logpdf(inputs, mean, cov))
+                cluster_lls.append(log_weight + multivariate_normal.logpdf(inputs, mean, cov))
             return logsumexp(np.vstack(cluster_lls), axis=0)
 
         def sample(rng, params, num_samples=1):

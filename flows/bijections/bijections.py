@@ -26,11 +26,11 @@ def ActNorm():
     """
 
     def init_fun(rng, input_shape, **kwargs):
-        inputs = kwargs.pop("inputs", None)
+        init_inputs = kwargs.pop("init_inputs", None)
 
-        if not (inputs is None):
-            weight = np.log(1.0 / (inputs.std(0) + 1e-12))
-            bias = inputs.mean(0)
+        if not (init_inputs is None):
+            weight = np.log(1.0 / (init_inputs.std(0) + 1e-12))
+            bias = init_inputs.mean(0)
         else:
             weight = np.ones(input_shape)
             bias = np.zeros(input_shape)
@@ -39,14 +39,12 @@ def ActNorm():
             weight, bias = params
             u = (inputs - bias) * np.exp(weight)
             log_det_jacobian = np.full((inputs.shape[0],), weight.sum())
-
             return u, log_det_jacobian
 
         def inverse_fun(params, inputs, **kwargs):
             weight, bias = params
             u = inputs * np.exp(-weight) + bias
             log_det_jacobian = np.full((inputs.shape[0],), -weight.sum())
-
             return u, log_det_jacobian
 
         return (weight, bias), direct_fun, inverse_fun
@@ -345,16 +343,13 @@ def Sigmoid(clip_before_logit=True):
         def direct_fun(params, inputs, **kwargs):
             inputs = inputs.reshape(inputs.shape[0], -1)
             log_det_jacobian = np.log(expit(inputs) * (1 - expit(inputs))).sum(-1)
-
             return expit(inputs), log_det_jacobian
 
         def inverse_fun(params, inputs, **kwargs):
             if clip_before_logit:
                 inputs = np.clip(inputs, 1e-5, 1 - 1e-5)
-
             inputs = inputs.reshape(inputs.shape[0], -1)
             log_det_jacobian = -np.log(inputs - (inputs ** 2.0)).sum(-1)
-
             return logit(inputs), log_det_jacobian
 
         return (), direct_fun, inverse_fun
@@ -383,15 +378,15 @@ def Serial(*init_funs):
     """
 
     def init_fun(rng, input_shape, **kwargs):
-        inputs = kwargs.pop("inputs", None)
+        init_inputs = kwargs.pop("init_inputs", None)
 
         all_params, direct_funs, inverse_funs = [], [], []
         for init_fun in init_funs:
             rng, layer_rng = random.split(rng)
-            param, direct_fun, inverse_fun = init_fun(layer_rng, input_shape, inputs=inputs)
+            param, direct_fun, inverse_fun = init_fun(layer_rng, input_shape, init_inputs=init_inputs)
 
-            if not (inputs is None):
-                inputs = direct_fun(param, inputs)
+            if not (init_inputs is None):
+                init_inputs = direct_fun(param, init_inputs)[0]
 
             all_params.append(param)
             direct_funs.append(direct_fun)

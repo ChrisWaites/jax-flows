@@ -89,7 +89,7 @@ def load_data_no_discrete_normalised(path):
 def load_data_no_discrete_normalised_as_array(path):
 
     data_train, data_test = load_data_no_discrete_normalised(path)
-    data_train, data_test = data_train.as_matrix(), data_test.as_matrix()
+    data_train, data_test = data_train.values, data_test.values
 
     i = 0
     # Remove any features that have too many re-occurring real values.

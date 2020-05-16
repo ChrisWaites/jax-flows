@@ -64,7 +64,7 @@ def main(config):
     prior = flows.GMM(gmm.means_, gmm.covariances_, gmm.weights_)
     """
 
-    init_fun = flows.Flow(bijection, prior)
+    init_fun = flows.Flow(lambda key, shape: bijection(key, shape, init_inputs=X), prior)
     temp_key, key = random.split(key)
     params, log_pdf, sample = init_fun(temp_key, input_shape)
 
@@ -76,7 +76,13 @@ def main(config):
     opt_init, opt_update, get_params = utils.get_optimizer(optimizer, sched, b1, b2)
     opt_state = opt_init(params)
 
+
+    def l2_squared(pytree):
+        leaves, _ = tree_util.tree_flatten(pytree)
+        return sum(np.vdot(x, x) for x in leaves)
+
     def loss(params, inputs):
+        # return np.nan_to_num(-log_pdf(params, inputs)).clip(-1e6, 1e6).mean()
         return -log_pdf(params, inputs).mean()
 
     def private_grad(params, batch, rng, l2_norm_clip, noise_multiplier, minibatch_size):
@@ -99,13 +105,13 @@ def main(config):
         normalized_noised_aggregated_clipped_grads = tree_util.tree_map(normalize_, noised_aggregated_clipped_grads)
         return normalized_noised_aggregated_clipped_grads
 
-    @jit
+    #@jit
     def private_update(rng, i, opt_state, batch):
         params = get_params(opt_state)
         grads = private_grad(params, batch, rng, l2_norm_clip, noise_multiplier, minibatch_size)
         return opt_update(i, grads, opt_state)
 
-    @jit
+    #@jit
     def update(rng, i, opt_state, batch):
         params = get_params(opt_state)
         grads = grad(loss)(params, batch)
@@ -189,10 +195,9 @@ def main(config):
             params = get_params(opt_state)
             train_loss = loss(params, X)
             val_loss = loss(params, X_val)
-
             # Exit if privacy limit reached or NaN occurs
-            if (private and epsilon >= target_epsilon) or iteration > 5000 and np.isnan(train_loss).any():
-                return {'nll': (best_loss, 0.)}
+            # if (private and epsilon >= target_epsilon) or iteration > 5000 and np.isnan(train_loss).any():
+            #     return {'nll': (best_loss, 0.)}
 
             train_losses.append(train_loss)
             val_losses.append(val_loss)
@@ -210,7 +215,7 @@ def main(config):
             pbar_text = 'Train NLL: {:.4f} Val NLL: {:.4f} Best NLL: {:.4f} ε: {:.4f}'.format(
                 train_loss,
                 val_loss,
-                best_loss if best_loss else 99999.,
+                best_loss,
                 epsilon,
             )
 

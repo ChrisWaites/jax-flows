@@ -99,14 +99,20 @@ class Tests(unittest.TestCase):
 
         # Test data-dependent initialization
         inputs = random.uniform(random.PRNGKey(0), (20, 3), minval=-10.0, maxval=10.0)
+        input_shape = inputs.shape[1:]
 
         init_fun = flows.Serial(flows.ActNorm())
-        params, direct_fun, inverse_fun = init_fun(random.PRNGKey(0), inputs.shape[1:], inputs=inputs)
+        params, direct_fun, inverse_fun = init_fun(random.PRNGKey(0), inputs.shape[1:], init_inputs=inputs)
 
         expected_weight, expected_bias = np.log(1.0 / (inputs.std(0) + 1e-12)), inputs.mean(0)
 
-        self.assertTrue(np.array_equal(params[0][0], expected_weight))
-        self.assertTrue(np.array_equal(params[0][1], expected_bias))
+        # self.assertTrue(np.array_equal(params[0][0], expected_weight))
+        # self.assertTrue(np.array_equal(params[0][1], expected_bias))
+
+        mapped_inputs, _ = direct_fun(params, inputs)
+
+        self.assertFalse((np.abs(mapped_inputs.mean(0)) > 1e6).any())
+        self.assertTrue(np.allclose(np.ones(input_shape), mapped_inputs.std(0)))
 
     def test_invertible_linear(self):
         for test in (returns_correct_shape, is_bijective):
