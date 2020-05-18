@@ -1,1 +1,1 @@
-from .gowalla_dataset import *
+from .gowalla import *

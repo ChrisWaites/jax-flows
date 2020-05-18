@@ -1,4 +1,4 @@
-import numpy as np
+import jax.numpy as np
 import pandas as pd
 from .. import utils
 
@@ -37,7 +37,7 @@ def get_datasets(val_prop=0.1, test_prop=0.1):
         if 'categorical' in datatype:
             df[column] = df[column].astype('category').cat.codes
 
-    X = processor.fit_transform(df.values.astype('float32'))
+    X = np.array(processor.fit_transform(df.values.astype('float32')))
 
     val_start = int(X.shape[0] * (1 - (val_prop + test_prop)))
     val_end = int(X.shape[0] * (1 - test_prop))

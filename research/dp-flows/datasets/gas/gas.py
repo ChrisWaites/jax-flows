@@ -1,16 +1,19 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import jax.numpy as jnp
 
 from .. import maf_utils as util
+from .. import utils as dpflows_util
 
 
 path = 'datasets/gas/ethylene_CO.pickle'
 
 
+@dpflows_util.constant_seed
 def get_datasets(val_prop=0.1):
     dataset = GAS()
-    return dataset.trn.x, dataset.trn.x, dataset.val.x
+    return jnp.array(dataset.trn.x), jnp.array(dataset.trn.x), jnp.array(dataset.val.x)
 
 
 class GAS:

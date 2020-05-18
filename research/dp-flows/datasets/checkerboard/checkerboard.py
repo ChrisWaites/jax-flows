@@ -1,4 +1,5 @@
 import numpy as np
+import jax.numpy as jnp
 from .. import utils
 
 def block(x_low, x_high, y_low, y_high):
@@ -21,6 +22,7 @@ def get_datasets(val_prop=0.1, test_prop=0.1):
     ].astype(np.float32)
 
     np.random.shuffle(dataset)
+    dataset = jnp.array(dataset)
 
     val_start = int(dataset.shape[0] * (1 - (test_prop + val_prop)))
     val_end = int(dataset.shape[0] * (1 - test_prop))

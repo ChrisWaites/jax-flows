@@ -1,5 +1,6 @@
 import matplotlib.pyplot as plt
 import numpy as np
+import jax.numpy as jnp
 
 import datasets
 
@@ -11,7 +12,7 @@ path = 'datasets/miniboone/data.npy'
 
 def get_datasets(val_prop=0.1):
     dataset = MINIBOONE()
-    return dataset.trn.x, dataset.trn.x, dataset.val.x
+    return jnp.array(dataset.trn.x), jnp.array(dataset.trn.x), jnp.array(dataset.val.x)
 
 
 class MINIBOONE:

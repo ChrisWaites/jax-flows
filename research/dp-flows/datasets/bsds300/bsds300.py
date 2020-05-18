@@ -1,6 +1,7 @@
 import h5py
 import matplotlib.pyplot as plt
 import numpy as np
+import jax.numpy as jnp
 
 import datasets
 
@@ -12,7 +13,7 @@ path = 'datasets/bsds300/BSDS300.hdf5'
 
 def get_datasets(val_prop=0.1):
     dataset = BSDS300()
-    return dataset.trn.x, dataset.trn.x, dataset.val.x
+    return jnp.array(dataset.trn.x), jnp.array(dataset.trn.x), jnp.array(dataset.val.x)
 
 
 class BSDS300:

@@ -1,1 +1,1 @@
-from .pinwheel_dataset import *
+from .pinwheel import *

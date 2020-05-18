@@ -1,3 +1,4 @@
+import jax.numpy as jnp
 import numpy as np
 import pandas as pd
 import tensorflow as tf
@@ -6,6 +7,17 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 
 from .. import utils
+
+
+@utils.constant_seed
+def get_datasets(val_prop=0.1):
+    X = jnp.array(make_pinwheel_data(0.3, 0.05, 5, 12000, 0.25)[0])
+    val_cutoff = int(X.shape[0] * (1 - val_prop))
+    return X, X[:val_cutoff], X[val_cutoff:]
+
+
+def postprocess(X):
+    return X
 
 
 def make_pinwheel_data(radial_std, tangential_std, num_classes, num_per_class, rate):
@@ -52,16 +64,3 @@ def perturb_data(x, noise_ratio=0.1, noise_mean=0, noise_stddev=10, seed=0):
     x[noise_indices, :] = np.random.normal(loc=noise_mean, scale=noise_stddev, size=(N_noise, D))
 
     return x
-
-
-@utils.constant_seed
-def get_datasets(val_prop=0.1):
-    X, _ = make_pinwheel_data(0.3, 0.05, 5, 12000, 0.25)
-
-    val_cutoff = int(X.shape[0] * (1 - val_prop))
-
-    return X, X[:val_cutoff], X[val_cutoff:]
-
-
-def postprocess(X):
-    return X

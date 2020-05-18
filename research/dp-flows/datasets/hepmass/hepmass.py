@@ -4,6 +4,7 @@ from os.path import join
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import jax.numpy as np
 
 
 from .. import maf_utils as util
@@ -13,7 +14,7 @@ path = 'datasets/hepmass/'
 
 def get_datasets(val_prop=0.1):
     dataset = HEPMASS()
-    return dataset.trn.x, dataset.trn.x, dataset.val.x
+    return jnp.array(dataset.trn.x), jnp.array(dataset.trn.x), jnp.array(dataset.val.x)
 
 
 class HEPMASS:

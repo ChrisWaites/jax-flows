@@ -1,15 +1,18 @@
 import matplotlib.pyplot as plt
 import numpy as np
+import jax.numpy as jnp
 
 from .. import maf_utils as util
+from .. import utils as dpflows_util
 
 
 path = 'datasets/power/data.npy'
 
 
+@dpflows_util.constant_seed
 def get_datasets(val_prop=0.1):
     dataset = POWER()
-    return dataset.trn.x, dataset.trn.x, dataset.val.x
+    return jnp.array(dataset.trn.x), jnp.array(dataset.trn.x), jnp.array(dataset.val.x)
 
 
 class POWER:

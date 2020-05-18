@@ -1,1 +1,1 @@
-from .lifesci_dataset import *
+from .lifesci import *

@@ -1,1 +1,1 @@
-from .checkerboard_dataset import *
+from .checkerboard import *

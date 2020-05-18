@@ -79,8 +79,9 @@ def AffineCoupling(scale, translate, mask):
             log_s = scale_apply_fun(scale_params, masked_inputs) * (1 - mask)
             t = translate_apply_fun(translate_params, masked_inputs) * (1 - mask)
             s = np.exp(log_s)
+            u = inputs * s + t
             log_det_jacobian = log_s.sum(-1)
-            return inputs * s + t, log_det_jacobian
+            return u, log_det_jacobian
 
         def inverse_fun(params, inputs, **kwargs):
             scale_params, translate_params = params
@@ -88,8 +89,9 @@ def AffineCoupling(scale, translate, mask):
             log_s = scale_apply_fun(scale_params, masked_inputs) * (1 - mask)
             t = translate_apply_fun(translate_params, masked_inputs) * (1 - mask)
             s = np.exp(-log_s)
+            u = (inputs - t) * s
             log_det_jacobian = log_s.sum(-1)
-            return (inputs - t) * s, log_det_jacobian
+            return u, log_det_jacobian
 
         return (scale_params, translate_params), direct_fun, inverse_fun
     return init_fun

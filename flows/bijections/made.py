@@ -33,7 +33,7 @@ def get_made_mask(in_features, out_features, in_flow_features, mask_type=None):
         out_degrees = np.arange(out_features) % (in_flow_features - 1)
 
     mask = np.expand_dims(out_degrees, -1) >= np.expand_dims(in_degrees, 0)
-    return np.transpose(mask).astype(np.float32)
+    return np.transpose(mask)
 
 
 def MADE(joiner, trunk, num_hidden):

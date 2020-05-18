@@ -1,1 +1,1 @@
-from .adult_dataset import *
+from .adult import *
