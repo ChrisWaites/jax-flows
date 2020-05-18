@@ -2,19 +2,25 @@ import sys
 
 sys.path.insert(0, '../../')
 
+import jax.numpy as np
 from jax.experimental import stax
 from jax.nn.initializers import orthogonal, zeros
 import flows
 import numpy as onp
 
 
+def weight_initializer(key, shape, dtype=np.float32):
+    bound = 1.0 / (shape[0] ** 0.5)
+    return random.uniform(key, shape, dtype, minval=-bound, maxval=bound)
+
+
 def get_affine_coupling_net(input_shape, num_hidden=64, act=stax.Relu):
     return stax.serial(
-        stax.Dense(num_hidden, W_init=orthogonal(), b_init=zeros),
+        stax.Dense(num_hidden, orthogonal(), zeros),
         act,
-        stax.Dense(num_hidden, W_init=orthogonal(), b_init=zeros),
+        stax.Dense(num_hidden, orthogonal(), zeros),
         act,
-        stax.Dense(input_shape[-1], W_init=orthogonal(), b_init=zeros),
+        stax.Dense(input_shape[-1], orthogonal(), zeros),
     )
 
 
@@ -35,11 +41,12 @@ def get_modules(flow, num_blocks, input_shape, normalization, num_hidden=64):
     hidden_mask = flows.get_made_mask(num_hidden, num_hidden, num_inputs)
     output_mask = flows.get_made_mask(num_hidden, num_inputs * 2, num_inputs, mask_type="output")
 
+    made_act = stax.Relu
     made_joiner = flows.MaskedDense(num_hidden, input_mask)
     made_trunk = stax.serial(
-        stax.Relu,
+        made_act,
         flows.MaskedDense(num_hidden, hidden_mask),
-        stax.Relu,
+        made_act,
         flows.MaskedDense(num_inputs * 2, output_mask),
     )
 
@@ -89,7 +96,7 @@ def get_modules(flow, num_blocks, input_shape, normalization, num_hidden=64):
                     flows.ActNorm(),
                 ]
             modules += [
-                flows.Shuffle(),
+                flows.Reverse(),
             ]
     elif flow == 'neural-spline':
         for _ in range(num_blocks):

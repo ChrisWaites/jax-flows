@@ -29,10 +29,10 @@ def ActNorm():
         init_inputs = kwargs.pop("init_inputs", None)
 
         if not (init_inputs is None):
-            weight = np.log(1.0 / (init_inputs.std(0) + 1e-12))
+            weight = np.log(1.0 / (init_inputs.std(0) + 1e-6))
             bias = init_inputs.mean(0)
         else:
-            weight = np.ones(input_shape)
+            weight = np.zeros(input_shape)
             bias = np.zeros(input_shape)
 
         def direct_fun(params, inputs, **kwargs):
@@ -48,7 +48,6 @@ def ActNorm():
             return u, log_det_jacobian
 
         return (weight, bias), direct_fun, inverse_fun
-
     return init_fun
 
 
@@ -76,28 +75,23 @@ def AffineCoupling(scale, translate, mask):
 
         def direct_fun(params, inputs, **kwargs):
             scale_params, translate_params = params
-
             masked_inputs = inputs * mask
             log_s = scale_apply_fun(scale_params, masked_inputs) * (1 - mask)
             t = translate_apply_fun(translate_params, masked_inputs) * (1 - mask)
             s = np.exp(log_s)
-
             log_det_jacobian = log_s.sum(-1)
             return inputs * s + t, log_det_jacobian
 
         def inverse_fun(params, inputs, **kwargs):
             scale_params, translate_params = params
-
             masked_inputs = inputs * mask
             log_s = scale_apply_fun(scale_params, masked_inputs) * (1 - mask)
             t = translate_apply_fun(translate_params, masked_inputs) * (1 - mask)
             s = np.exp(-log_s)
-
             log_det_jacobian = log_s.sum(-1)
             return (inputs - t) * s, log_det_jacobian
 
         return (scale_params, translate_params), direct_fun, inverse_fun
-
     return init_fun
 
 
@@ -176,7 +170,6 @@ def BatchNorm(momentum=0.9):
             return y, log_det_jacobian
 
         return (log_gamma, beta), direct_fun, inverse_fun
-
     return init_fun
 
 
@@ -194,6 +187,34 @@ def Invert(bijection):
     return init_fun
 
 
+def FixedInvertibleLinear():
+    """An implementation of an invertible linear layer from `Glow: Generative Flow with Invertible 1x1 Convolutions`
+    (https://arxiv.org/abs/1605.08803).
+
+    Returns:
+        An ``init_fun`` mapping ``(rng, input_shape)`` to a ``(params, direct_fun, inverse_fun)`` triplet.
+    """
+
+    def init_fun(rng, input_shape, **kwargs):
+        dim = input_shape[-1]
+        W, _ = scipy.linalg.qr(random.normal(rng, (dim, dim)))
+        W_inv = linalg.inv(W)
+        W_log_det = np.linalg.slogdet(W)[-1]
+
+        def direct_fun(params, inputs, **kwargs):
+            z = inputs @ W
+            log_det_jacobian = np.full((inputs.shape[0],), W_log_det)
+            return z, log_det_jacobian
+
+        def inverse_fun(params, inputs, **kwargs):
+            z = inputs @ W_inv
+            log_det_jacobian = np.full((inputs.shape[0],), -W_log_det)
+            return z, log_det_jacobian
+
+        return (), direct_fun, inverse_fun
+    return init_fun
+
+
 def InvertibleLinear():
     """An implementation of an invertible linear layer from `Glow: Generative Flow with Invertible 1x1 Convolutions`
     (https://arxiv.org/abs/1605.08803).
@@ -203,41 +224,32 @@ def InvertibleLinear():
     """
 
     def init_fun(rng, input_shape, **kwargs):
-        W = orthogonal()(rng, (input_shape[-1], input_shape[-1]))
-
-        L_mask = np.tril(np.ones(W.shape), -1)
-        U_mask = L_mask.transpose()
-
+        dim = input_shape[-1]
+        W, _ = scipy.linalg.qr(random.normal(rng, (dim, dim)))
         P, L, U = scipy.linalg.lu(W)
-
         S = np.diag(U)
-        sign_S = np.sign(S)
-        log_S = np.log(np.abs(S))
-        ident = np.eye(L.shape[0])
+        U = np.triu(U, 1)
+        I = np.eye(dim)
 
         def direct_fun(params, inputs, **kwargs):
-            L, U, log_S = params
-
-            L = L * L_mask + ident
-            U = U * U_mask + np.diag(sign_S * np.exp(log_S))
-            W = P @ L @ U
-
-            log_det_jacobian = np.full((inputs.shape[0],), log_S.sum())
-            return inputs @ W, log_det_jacobian
+            L, U, S = params
+            L = np.tril(L, -1) + I
+            U = np.triu(U, 1)
+            W = P @ L @ (U + np.diag(S))
+            z = inputs @ W
+            log_det_jacobian = np.full((inputs.shape[0],), np.log(np.abs(S)).sum())
+            return z, log_det_jacobian
 
         def inverse_fun(params, inputs, **kwargs):
-            L, U, log_S = params
+            L, U, S = params
+            L = np.tril(L, -1) + I
+            U = np.triu(U, 1)
+            W = P @ L @ (U + np.diag(S))
+            z = inputs @ linalg.inv(W)
+            log_det_jacobian = np.full((inputs.shape[0],), -np.log(np.abs(S)).sum())
+            return z, log_det_jacobian
 
-            L = L * L_mask + ident
-            U = U * U_mask + np.diag(sign_S * np.exp(log_S))
-            W = P @ L @ U
-
-            log_det_jacobian = np.full((inputs.shape[0],), -log_S.sum())
-
-            return inputs @ linalg.inv(W), log_det_jacobian
-
-        return (L, U, log_S), direct_fun, inverse_fun
-
+        return (L, U, S), direct_fun, inverse_fun
     return init_fun
 
 
@@ -287,7 +299,6 @@ def Reverse():
             return inputs[:, inv_perm], np.zeros((inputs.shape[0],))
 
         return (), direct_fun, inverse_fun
-
     return init_fun
 
 
@@ -311,7 +322,7 @@ def Shuffle():
     """
 
     def init_fun(rng, input_shape, **kwargs):
-        perm = random.shuffle(rng, np.arange(onp.prod(input_shape))).reshape(input_shape)
+        perm = random.permutation(rng, np.arange(onp.prod(input_shape))).reshape(input_shape)
         inv_perm = np.argsort(perm)
 
         def direct_fun(params, inputs, **kwargs):
@@ -321,7 +332,6 @@ def Shuffle():
             return inputs[:, inv_perm], np.zeros((inputs.shape[0],))
 
         return (), direct_fun, inverse_fun
-
     return init_fun
 
 
@@ -349,11 +359,10 @@ def Sigmoid(clip_before_logit=True):
             if clip_before_logit:
                 inputs = np.clip(inputs, 1e-5, 1 - 1e-5)
             inputs = inputs.reshape(inputs.shape[0], -1)
-            log_det_jacobian = -np.log(inputs - (inputs ** 2.0)).sum(-1)
+            log_det_jacobian = -np.log(inputs - np.square(inputs)).sum(-1)
             return logit(inputs), log_det_jacobian
 
         return (), direct_fun, inverse_fun
-
     return init_fun
 
 
@@ -385,12 +394,12 @@ def Serial(*init_funs):
             rng, layer_rng = random.split(rng)
             param, direct_fun, inverse_fun = init_fun(layer_rng, input_shape, init_inputs=init_inputs)
 
-            if not (init_inputs is None):
-                init_inputs = direct_fun(param, init_inputs)[0]
-
             all_params.append(param)
             direct_funs.append(direct_fun)
             inverse_funs.append(inverse_fun)
+
+            if not (init_inputs is None):
+                init_inputs = direct_fun(param, init_inputs)[0]
 
         def feed_forward(params, apply_funs, inputs):
             total_log_det_jacobian = None
@@ -409,5 +418,4 @@ def Serial(*init_funs):
             return feed_forward(reversed(params), reversed(inverse_funs), inputs)
 
         return all_params, direct_fun, inverse_fun
-
     return init_fun

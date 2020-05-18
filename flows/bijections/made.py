@@ -2,11 +2,17 @@ import jax
 import jax.numpy as np
 from jax import random
 from jax.experimental import stax
-from jax.nn.initializers import glorot_normal, normal
+from jax.nn.initializers import ones, normal
 
 
-def MaskedDense(out_dim, mask, W_init=glorot_normal(), b_init=normal()):
-    init_fun, _ = stax.Dense(out_dim, W_init, b_init)
+def MaskedDense(out_dim, mask):
+    def init_fun(rng, input_shape):
+        output_shape = input_shape[:-1] + (out_dim,)
+        k1, k2 = random.split(rng)
+        bound = 1.0 / (input_shape[-1] ** 0.5)
+        W = random.uniform(k1, (input_shape[-1], out_dim), minval=-bound, maxval=bound)
+        b = random.uniform(k2, (out_dim,), minval=-bound, maxval=bound)
+        return output_shape, (W, b)
 
     def apply_fun(params, inputs, **kwargs):
         W, b = params
@@ -54,18 +60,14 @@ def MADE(joiner, trunk, num_hidden):
 
         def direct_fun(params, inputs, **kwargs):
             joiner_params, trunk_params = params
-
             h = joiner_apply_fun(joiner_params, inputs)
             m, a = trunk_apply_fun(trunk_params, h).split(2, 1)
             u = (inputs - m) * np.exp(-a)
-
             log_det_jacobian = -a.sum(-1)
-
             return u, log_det_jacobian
 
         def inverse_fun(params, inputs, **kwargs):
             joiner_params, trunk_params = params
-
             x = np.zeros_like(inputs)
             for i_col in range(inputs.shape[1]):
                 h = joiner_apply_fun(joiner_params, x)
@@ -73,11 +75,8 @@ def MADE(joiner, trunk, num_hidden):
                 x = jax.ops.index_update(
                     x, jax.ops.index[:, i_col], inputs[:, i_col] * np.exp(a[:, i_col]) + m[:, i_col]
                 )
-
             log_det_jacobian = -a.sum(-1)
-
             return x, log_det_jacobian
 
         return (joiner_params, trunk_params), direct_fun, inverse_fun
-
     return init_fun

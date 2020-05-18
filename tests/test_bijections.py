@@ -103,12 +103,7 @@ class Tests(unittest.TestCase):
 
         init_fun = flows.Serial(flows.ActNorm())
         params, direct_fun, inverse_fun = init_fun(random.PRNGKey(0), inputs.shape[1:], init_inputs=inputs)
-
         expected_weight, expected_bias = np.log(1.0 / (inputs.std(0) + 1e-12)), inputs.mean(0)
-
-        # self.assertTrue(np.array_equal(params[0][0], expected_weight))
-        # self.assertTrue(np.array_equal(params[0][1], expected_bias))
-
         mapped_inputs, _ = direct_fun(params, inputs)
 
         self.assertFalse((np.abs(mapped_inputs.mean(0)) > 1e6).any())
@@ -117,6 +112,10 @@ class Tests(unittest.TestCase):
     def test_invertible_linear(self):
         for test in (returns_correct_shape, is_bijective):
             test(self, flows.InvertibleLinear())
+               
+    def test_fixed_invertible_linear(self):
+        for test in (returns_correct_shape, is_bijective):
+            test(self, flows.FixedInvertibleLinear())
 
     def test_sigmoid(self):
         for test in (returns_correct_shape, is_bijective):

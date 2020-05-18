@@ -71,18 +71,17 @@ def main(config):
     # Create optimizer
     # sched = lambda i: lr * np.minimum(1., (i / 10000.) ** 2.)
     # sched = lambda i: lr * np.minimum(1., (50000. / i) ** 2.)
-    # sched = lambda i: lr * (0.99995 ** i)
-    sched = lr
+    sched = lambda i: lr * (0.99995 ** i)
+    # sched = lr
     opt_init, opt_update, get_params = utils.get_optimizer(optimizer, sched, b1, b2)
     opt_state = opt_init(params)
-
 
     def l2_squared(pytree):
         leaves, _ = tree_util.tree_flatten(pytree)
         return sum(np.vdot(x, x) for x in leaves)
 
     def loss(params, inputs):
-        # return np.nan_to_num(-log_pdf(params, inputs)).clip(-1e6, 1e6).mean()
+        # return np.nan_to_num(-log_pdf(params, inputs)).clip(-1e6, 1e6).mean() + weight_decay * l2_squared(params)
         return -log_pdf(params, inputs).mean()
 
     def private_grad(params, batch, rng, l2_norm_clip, noise_multiplier, minibatch_size):
@@ -105,13 +104,13 @@ def main(config):
         normalized_noised_aggregated_clipped_grads = tree_util.tree_map(normalize_, noised_aggregated_clipped_grads)
         return normalized_noised_aggregated_clipped_grads
 
-    #@jit
+    @jit
     def private_update(rng, i, opt_state, batch):
         params = get_params(opt_state)
         grads = private_grad(params, batch, rng, l2_norm_clip, noise_multiplier, minibatch_size)
         return opt_update(i, grads, opt_state)
 
-    #@jit
+    @jit
     def update(rng, i, opt_state, batch):
         params = get_params(opt_state)
         grads = grad(loss)(params, batch)
@@ -141,7 +140,7 @@ def main(config):
         """
 
     best_params, best_loss = None, None
-    train_losses, val_losses, epsilons = [], [], []
+    train_losses, val_losses, epsilons, l2_norms = [], [], [], []
     pbar = tqdm(range(1, iterations + 1))
     for iteration in pbar:
         # Calculate epoch from iteration
@@ -176,7 +175,7 @@ def main(config):
             opt_state = update(temp_key, iteration, opt_state, batch)
 
         # Update progress bar
-        if iteration % int(.005 * iterations) == 0:
+        if iteration == 1 or iteration % int(.005 * iterations) == 0:
             # Calculate privacy loss
             if composition == 'gdp':
                 epsilon = dp.compute_eps_uniform(
@@ -195,13 +194,12 @@ def main(config):
             params = get_params(opt_state)
             train_loss = loss(params, X)
             val_loss = loss(params, X_val)
-            # Exit if privacy limit reached or NaN occurs
-            # if (private and epsilon >= target_epsilon) or iteration > 5000 and np.isnan(train_loss).any():
-            #     return {'nll': (best_loss, 0.)}
+            l2_norm = l2_squared(params) ** 0.5
 
             train_losses.append(train_loss)
             val_losses.append(val_loss)
             epsilons.append(epsilon)
+            l2_norms.append(l2_norm)
 
             # Update best model thus far
             if best_loss is None or val_loss < best_loss:
@@ -212,11 +210,12 @@ def main(config):
                 utils.log(key, best_params, sample, X, output_dir, train_losses, val_losses, epsilons)
 
             # Update progress bar
-            pbar_text = 'Train NLL: {:.4f} Val NLL: {:.4f} Best NLL: {:.4f} ε: {:.4f}'.format(
+            pbar_text = 'Train: {:.3f} Val: {:.3f} Best: {:.3f} ε: {:.3f} med l2: {:.3f}'.format(
                 train_loss,
                 val_loss,
                 best_loss,
                 epsilon,
+                np.median(l2_norms).item(),
             )
 
             pbar.set_description(pbar_text)
