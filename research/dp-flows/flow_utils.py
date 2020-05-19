@@ -2,11 +2,11 @@ import sys
 
 sys.path.insert(0, '../../')
 
-import jax.numpy as np
 from jax.experimental import stax
 from jax.nn.initializers import orthogonal, zeros
 import flows
 import numpy as onp
+import jax.numpy as np
 
 
 def weight_initializer(key, shape, dtype=np.float32):

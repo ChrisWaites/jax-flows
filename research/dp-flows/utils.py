@@ -1,8 +1,10 @@
 from datasets import *
 from jax.experimental import optimizers
+import dp
 import jax.random as random
 import matplotlib.pyplot as plt
 import numpy as onp
+import jax.numpy as np
 import os
 import pickle
 import seaborn as sns
@@ -81,6 +83,59 @@ def get_optimizer(optimizer, sched, b1=0.9, b2=0.999):
         raise Exception('Invalid optimizer: {}'.format(optimizer))
 
 
+def get_scheduler(lr, lr_schedule):
+    if lr_schedule == 'constant':
+        return lr
+    elif lr_schedule == 'exponential':
+        return lambda i: lr * (0.99995 ** i)
+    else:
+        raise Exception('Invalid lr scheduler: {}'.format(lr_scheduler))
+    
+
+def get_epsilon(sampling, composition, private, iteration, noise_multiplier, n, minibatch_size, delta):
+    if not private:
+        return 999999.
+    elif composition == 'gdp':
+        if sampling == 'poisson':
+            return dp.compute_eps_poisson(iteration, noise_multiplier, n, minibatch_size, delta)
+        elif sampling == 'uniform':
+            return dp.compute_eps_uniform(iteration, noise_multiplier, n, minibatch_size, delta)
+        else:
+            raise Exception('Invalid sampling method {} for composition {}.'.format(sampling, composition))
+    elif composition == 'ma':
+        if sampling == 'poisson':
+            return dp.epsilon(n, minibatch_size, noise_multiplier, iteration, delta)
+        else:
+            raise Exception('Invalid sampling method {} for composition {}.'.format(sampling, composition))
+    else:
+        raise Exception('Invalid composition method: {}'.format(composition))
+
+
+def get_batch(sampling, key, X, minibatch_size, iteration):
+    if sampling == 'batch':
+        # Calculate epoch from iteration
+        epoch = iteration // (X.shape[0] // minibatch_size)
+        batch_index = iteration % (X.shape[0] // minibatch_size)
+        batch_index_start = batch_index * minibatch_size
+        # Regular batching
+        if batch_index == 0:
+            temp_key, key = random.split(key)
+            X = random.permutation(temp_key, X)
+        return X[batch_index_start:batch_index_start+minibatch_size], X
+    elif sampling == 'poisson':
+        # Poisson subsampling
+        temp_key, key = random.split(key)
+        whether = random.uniform(temp_key, (X.shape[0],)) < (minibatch_size / X.shape[0])
+        return X[whether], X
+    elif sampling == 'uniform':
+        # Uniform subsampling
+        temp_key, key = random.split(key)
+        X = random.permutation(temp_key, X)
+        return X[:minibatch_size], X
+    else:
+        raise Exception('Invalid sampling method: {}'.format(sampling))
+
+
 def get_datasets(dataset):
     return {
         'adult': adult,
@@ -110,3 +165,5 @@ def get_pca(dataset):
     return {
         'lifesci': lifesci,
     }[dataset].pca
+
+
