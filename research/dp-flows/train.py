@@ -28,7 +28,7 @@ def main(config):
     composition = config['composition'].lower()
     dataset = config['dataset']
     delta = float(config['delta'])
-    dirname = config['dirname']
+    experiment = config['experiment']
     flow = config['flow']
     iterations = int(config['iterations'])
     l2_norm_clip = float(config['l2_norm_clip'])
@@ -36,7 +36,6 @@ def main(config):
     log_performance = int(config['log_performance'])
     lr = float(config['lr'])
     lr_schedule = config['lr_schedule'].lower()
-    microbatch_size = int(config['microbatch_size'])
     minibatch_size = int(config['minibatch_size'])
     noise_multiplier = float(config['noise_multiplier'])
     normalization = str(config['normalization']).lower() == 'true'
@@ -49,7 +48,7 @@ def main(config):
     weight_decay = float(config['weight_decay'])
 
     # Create dataset
-    _, X, X_val = utils.get_datasets(dataset)
+    X, X_val, _ = utils.get_datasets(dataset)
 
     input_shape = X.shape[1:]
     num_samples = X.shape[0]
@@ -119,10 +118,10 @@ def main(config):
     # Plot training data
     if log_params:
         # Create experiment directory
-        # dirname = datetime.now().strftime('%b-%d-%Y_%I:%M:%S_%p')
+        # experiment = datetime.now().strftime('%b-%d-%Y_%I:%M:%S_%p')
 
         output_dir = ''
-        for ext in ['out', dataset, 'flows', dirname]:
+        for ext in ['out', dataset, 'flows', experiment]:
             output_dir += ext + '/'
             utils.make_dir(output_dir)
 

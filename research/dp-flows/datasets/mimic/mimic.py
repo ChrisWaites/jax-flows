@@ -7,9 +7,35 @@
 
 from sklearn import preprocessing
 import numpy as np
+import jax.numpy as jnp
 import pandas as pd
 from datetime import datetime
 from .. import utils
+
+
+@utils.constant_seed
+def get_datasets():
+    dataset = get_patient_matrix(
+        'datasets/mimic/ADMISSIONS.csv',
+        'datasets/mimic/DIAGNOSES_ICD.csv',
+        'binary'
+    )
+
+    np.random.shuffle(dataset)
+    dataset = jnp.array(dataset)
+
+    val_cutoff = int(0.8 * dataset.shape[0])
+    test_cutoff = int(0.9 * dataset.shape[0])
+
+    X_train = dataset[:val_cutoff]
+    X_val = dataset[val_cutoff:test_cutoff]
+    X_test = dataset[test_cutoff:]
+
+    return X_train, X_val, X_test
+
+
+def postprocess(data):
+    return (data > 0.5).astype(np.int32)
 
 
 def get_patient_matrix(admissionFile, diagnosisFile, binary_count):
@@ -112,28 +138,3 @@ def convert_to_3digit_icd9(dxStr):
     else:
         if len(dxStr) > 3: return dxStr[:3]
         else: return dxStr
-
-
-@utils.constant_seed
-def get_datasets(val_prop=.1, test_prop=.1):
-    dataset = get_patient_matrix(
-        'datasets/mimic/ADMISSIONS.csv',
-        'datasets/mimic/DIAGNOSES_ICD.csv',
-        'binary'
-    )
-
-    np.random.shuffle(dataset)
-
-    val_start = int(dataset.shape[0] * (1 - (test_prop + val_prop)))
-    val_end = int(dataset.shape[0] * (1 - test_prop))
-
-    train_dataset = dataset[:val_start]
-    val_dataset = dataset[val_start:val_end]
-    test_dataset = dataset[val_end:]
-
-    return dataset, train_dataset, val_dataset, test_dataset
-
-
-def postprocess(data):
-    return (data > 0.5).astype(np.int32)
-

@@ -2,7 +2,7 @@ import math
 from .rdp_accountant import compute_rdp, get_privacy_spent
 
 
-def epsilon(N, batch_size, noise_multiplier, iterations, delta=1e-5):
+def epsilon(iterations, noise_multiplier, N, batch_size, delta=1e-5):
     """Calculates epsilon for stochastic gradient descent.
 
     Args:

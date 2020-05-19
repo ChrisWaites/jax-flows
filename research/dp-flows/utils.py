@@ -104,7 +104,7 @@ def get_epsilon(sampling, composition, private, iteration, noise_multiplier, n, 
             raise Exception('Invalid sampling method {} for composition {}.'.format(sampling, composition))
     elif composition == 'ma':
         if sampling == 'poisson':
-            return dp.epsilon(n, minibatch_size, noise_multiplier, iteration, delta)
+            return dp.epsilon(iteration, noise_multiplier, n, minibatch_size, delta)
         else:
             raise Exception('Invalid sampling method {} for composition {}.'.format(sampling, composition))
     else:

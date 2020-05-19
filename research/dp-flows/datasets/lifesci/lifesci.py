@@ -6,7 +6,7 @@ from sklearn import decomposition
 pca = decomposition.PCA(n_components=2)
 
 @utils.constant_seed
-def get_datasets(val_prop=.1, split=None):
+def get_datasets(split=None):
     if split:
         X_train = pd.read_csv('datasets/lifesci/train/{}.csv'.format(split)).values.astype('float32')
         X_test = pd.read_csv('datasets/lifesci/test/{}.csv'.format(split)).values.astype('float32')
@@ -14,7 +14,7 @@ def get_datasets(val_prop=.1, split=None):
         X_train = pd.read_csv('datasets/lifesci/lifesci_train.csv').values.astype('float32')
         X_test = pd.read_csv('datasets/lifesci/lifesci_test.csv').values.astype('float32')
     pca.fit(X_train)
-    return jnp.array(X_train), jnp.array(X_train), jnp.array(X_test)
+    return np.array(X_train), np.array(X_test), np.array(X_test)
 
 def postprocess(X):
     return X

@@ -1,15 +1,16 @@
+from sklearn import datasets as ds
+import jax.numpy as jnp
 import matplotlib.pyplot as plt
 import numpy as np
-from sklearn import datasets as ds
 
 from .. import maf_utils as util
-from .. import utils as dp_flow_utils
+from .. import utils as repo_utils
 
 
-@dp_flow_utils.constant_seed
-def get_datasets(val_prop=0.1):
+@repo_utils.constant_seed
+def get_datasets():
     dataset = MOONS()
-    return dataset.trn.x, dataset.val.x
+    return jnp.array(dataset.trn.x), jnp.array(dataset.val.x), jnp.array(dataset.tst.x)
 
 
 class MOONS:

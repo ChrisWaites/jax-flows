@@ -8,13 +8,14 @@ import jax.numpy as np
 
 
 from .. import maf_utils as util
+from .. import utils as repo_utils
 
 path = 'datasets/hepmass/'
 
-
-def get_datasets(val_prop=0.1):
+@repo_utils.constant_seed
+def get_datasets():
     dataset = HEPMASS()
-    return jnp.array(dataset.trn.x), jnp.array(dataset.trn.x), jnp.array(dataset.val.x)
+    return jnp.array(dataset.trn.x), jnp.array(dataset.val.x), jnp.array(dataset.tst.x)
 
 
 class HEPMASS:

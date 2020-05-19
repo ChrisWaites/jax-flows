@@ -9,7 +9,7 @@ def block(x_low, x_high, y_low, y_high):
     ))
 
 @utils.constant_seed
-def get_datasets(val_prop=0.1, test_prop=0.1):
+def get_datasets():
     dataset = np.r_[
         block(-2, -1, 1, 2),
         block(-2, -1, -1, 0),
@@ -20,12 +20,11 @@ def get_datasets(val_prop=0.1, test_prop=0.1):
         block(1, 2, 0, 1),
         block(1, 2, -2, -1),
     ].astype(np.float32)
-
     np.random.shuffle(dataset)
     dataset = jnp.array(dataset)
 
-    val_start = int(dataset.shape[0] * (1 - (test_prop + val_prop)))
-    val_end = int(dataset.shape[0] * (1 - test_prop))
+    val_start = int(0.8 * dataset.shape[0])
+    val_end = int(0.9 * dataset.shape[0])
 
     train_dataset = dataset[:val_start]
     val_dataset = dataset[val_start:val_end]

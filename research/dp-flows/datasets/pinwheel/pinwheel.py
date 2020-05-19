@@ -10,10 +10,11 @@ from .. import utils
 
 
 @utils.constant_seed
-def get_datasets(val_prop=0.1):
+def get_datasets():
     X = jnp.array(make_pinwheel_data(0.3, 0.05, 5, 12000, 0.25)[0])
-    val_cutoff = int(X.shape[0] * (1 - val_prop))
-    return X, X[:val_cutoff], X[val_cutoff:]
+    val_cutoff = int(0.8 * X.shape[0])
+    test_cutoff = int(0.9 * X.shape[0])
+    return X[:val_cutoff], X[val_cutoff:test_cutoff], X[test_cutoff:]
 
 
 def postprocess(X):
