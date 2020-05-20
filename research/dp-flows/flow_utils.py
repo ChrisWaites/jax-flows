@@ -2,11 +2,12 @@ import sys
 
 sys.path.insert(0, '../../')
 
+from jax import random
 from jax.experimental import stax
 from jax.nn.initializers import orthogonal, zeros
 import flows
-import numpy as onp
 import jax.numpy as np
+import numpy as onp
 
 
 def weight_initializer(key, shape, dtype=np.float32):
@@ -16,11 +17,11 @@ def weight_initializer(key, shape, dtype=np.float32):
 
 def get_affine_coupling_net(input_shape, num_hidden=64, act=stax.Relu):
     return stax.serial(
-        stax.Dense(num_hidden, orthogonal(), zeros),
+        stax.Dense(num_hidden, weight_initializer, weight_initializer), # orthogonal(), zeros),
         act,
-        stax.Dense(num_hidden, orthogonal(), zeros),
+        stax.Dense(num_hidden, weight_initializer, weight_initializer), #  orthogonal(), zeros),
         act,
-        stax.Dense(input_shape[-1], orthogonal(), zeros),
+        stax.Dense(input_shape[-1], weight_initializer, weight_initializer), # orthogonal(), zeros),
     )
 
 
@@ -93,7 +94,7 @@ def get_modules(flow, num_blocks, input_shape, normalization, num_hidden=64):
             ]
             if normalization:
                 modules += [
-                    flows.ActNorm(),
+                    flows.BatchNorm(),
                 ]
             modules += [
                 flows.Reverse(),

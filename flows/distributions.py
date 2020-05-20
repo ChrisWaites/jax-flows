@@ -11,13 +11,11 @@ def Normal():
     Returns:
         A function mapping ``(rng, input_shape)`` to a ``(params, log_pdf, sample)`` triplet.
     """
-
     def init_fun(rng, input_shape):
         mean = np.zeros(input_shape)
         covariance = np.eye(np.prod(input_shape))
 
         def log_pdf(params, inputs):
-            inputs = inputs.reshape(inputs.shape[0], -1)
             return multivariate_normal.logpdf(inputs, mean, covariance)
 
         def sample(rng, params, num_samples=1):
@@ -70,7 +68,6 @@ def Flow(transformation, prior=Normal()):
         >>> init_fun = flows.Flow(transformation, Normal())
         >>> params, log_pdf, sample = init_fun(rng, input_shape)
     """
-
     def init_fun(rng, input_shape):
         transformation_rng, prior_rng = random.split(rng)
 

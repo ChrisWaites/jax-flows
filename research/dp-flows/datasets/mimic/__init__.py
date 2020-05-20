@@ -1,1 +1,1 @@
-from .mimic_dataset import *
+from .mimic import *

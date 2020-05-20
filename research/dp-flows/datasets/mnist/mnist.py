@@ -10,6 +10,9 @@ from .. import maf_utils as util
 from .. import utils as repo_utils
 
 
+path = 'datasets/mnist/mnist.pkl'
+
+
 @repo_utils.constant_seed
 def get_datasets():
     dataset = MNIST()
@@ -57,9 +60,7 @@ class MNIST:
     def __init__(self, logit=True, dequantize=True):
 
         # load dataset
-        f = gzip.open(datasets.root + 'mnist/mnist.pkl.gz', 'rb')
-        trn, val, tst = pickle.load(f, encoding='latin1')
-        f.close()
+        trn, val, tst = pickle.load(open(path, 'rb'), encoding='latin1')
 
         rng = np.random.RandomState(42)
         self.trn = self.Data(trn, logit, dequantize, rng)

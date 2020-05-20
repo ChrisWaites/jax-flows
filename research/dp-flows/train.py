@@ -31,7 +31,7 @@ def main(config):
     experiment = config['experiment']
     flow = config['flow']
     iterations = int(config['iterations'])
-    l2_norm_clip = float(config['l2_norm_clip'])
+    l2_norm_clip_per_param = float(config['l2_norm_clip_per_param'])
     log_params = None if config['log_params'].lower() == 'none' else int(config['log_params'])
     log_performance = int(config['log_performance'])
     lr = float(config['lr'])
@@ -44,11 +44,13 @@ def main(config):
     optimizer = config['optimizer'].lower()
     private = str(config['private']).lower() == 'true'
     sampling = config['sampling'].lower()
-    target_epsilon = float(config['target_epsilon'])
     weight_decay = float(config['weight_decay'])
 
     # Create dataset
-    X, X_val, _ = utils.get_datasets(dataset)
+    X, X_val, X_test = utils.get_datasets(dataset)
+    print('X shape:      {}'.format(X.shape))
+    print('X_val shape:  {}'.format(X.shape))
+    print('X_test shape: {}'.format(X.shape))
 
     input_shape = X.shape[1:]
     num_samples = X.shape[0]
@@ -69,6 +71,9 @@ def main(config):
     init_fun = flows.Flow(lambda key, shape: bijection(key, shape, init_inputs=X), prior)
     temp_key, key = random.split(key)
     params, log_pdf, sample = init_fun(temp_key, input_shape)
+
+    num_params = sum(np.prod(param.shape) for param in tree_util.tree_flatten(params)[0])
+    l2_norm_clip = l2_norm_clip_per_param * num_params
 
     # Create optimizer
     scheduler = utils.get_scheduler(lr, lr_schedule)

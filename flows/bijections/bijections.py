@@ -227,7 +227,8 @@ def InvertibleLinear():
 
     def init_fun(rng, input_shape, **kwargs):
         dim = input_shape[-1]
-        W, _ = scipy.linalg.qr(random.normal(rng, (dim, dim)))
+        # W, _ = scipy.linalg.qr(random.normal(rng, (dim, dim)))
+        W = orthogonal()(rng, (dim, dim))
         P, L, U = scipy.linalg.lu(W)
         S = np.diag(U)
         U = np.triu(U, 1)

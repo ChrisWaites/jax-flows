@@ -96,10 +96,10 @@ def get_epsilon(sampling, composition, private, iteration, noise_multiplier, n, 
     if not private:
         return 999999.
     elif composition == 'gdp':
-        if sampling == 'poisson':
-            return dp.compute_eps_poisson(iteration, noise_multiplier, n, minibatch_size, delta)
-        elif sampling == 'uniform':
+        if sampling == 'uniform':
             return dp.compute_eps_uniform(iteration, noise_multiplier, n, minibatch_size, delta)
+        elif sampling == 'poisson':
+            return dp.compute_eps_poisson(iteration, noise_multiplier, n, minibatch_size, delta)
         else:
             raise Exception('Invalid sampling method {} for composition {}.'.format(sampling, composition))
     elif composition == 'ma':
@@ -122,16 +122,16 @@ def get_batch(sampling, key, X, minibatch_size, iteration):
             temp_key, key = random.split(key)
             X = random.permutation(temp_key, X)
         return X[batch_index_start:batch_index_start+minibatch_size], X
-    elif sampling == 'poisson':
-        # Poisson subsampling
-        temp_key, key = random.split(key)
-        whether = random.uniform(temp_key, (X.shape[0],)) < (minibatch_size / X.shape[0])
-        return X[whether], X
     elif sampling == 'uniform':
         # Uniform subsampling
         temp_key, key = random.split(key)
         X = random.permutation(temp_key, X)
         return X[:minibatch_size], X
+    elif sampling == 'poisson':
+        # Poisson subsampling
+        temp_key, key = random.split(key)
+        whether = random.uniform(temp_key, (X.shape[0],)) < (minibatch_size / X.shape[0])
+        return X[whether], X
     else:
         raise Exception('Invalid sampling method: {}'.format(sampling))
 
@@ -150,6 +150,7 @@ def get_datasets(dataset):
         'hepmass': hepmass,
         'lifesci': lifesci,
         'mimic': mimic,
+        'mnist': mnist,
         'miniboone': miniboone,
         'moons': moons.get_datasets,
         'olivetti': olivetti,
