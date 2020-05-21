@@ -46,28 +46,22 @@ class Tests(unittest.TestCase):
             test(self, flows.Reverse())
 
     def test_affine_coupling(self):
-        def get_affine_coupling_net(input_shape, hidden_dim=64, act=stax.Relu):
-            return stax.serial(
-                stax.Dense(hidden_dim, W_init=orthogonal(), b_init=zeros),
-                act,
-                stax.Dense(hidden_dim, W_init=orthogonal(), b_init=zeros),
-                act,
-                stax.Dense(input_shape[-1], W_init=orthogonal(), b_init=zeros),
+        def transform(rng, input_dim, output_dim, hidden_dim=64, act=stax.Relu):
+            init_fun, apply_fun = stax.serial(
+                stax.Dense(hidden_dim), act,
+                stax.Dense(hidden_dim), act,
+                stax.Dense(output_dim),
             )
+            _, params = init_fun(rng, (input_dim,))
+            return params, apply_fun
 
-        def get_affine_coupling_mask(input_shape):
-            mask = onp.zeros(input_shape)
-            mask[::2] = 1.0
-            return mask
+        inputs = random.uniform(random.PRNGKey(0), (20, 5), minval=-10.0, maxval=10.0)
 
-        inputs = random.uniform(random.PRNGKey(0), (20, 3), minval=-10.0, maxval=10.0)
+        init_fun = flows.AffineCoupling(transform)
+        for test in (returns_correct_shape, is_bijective):
+            test(self, init_fun, inputs)
 
-        init_fun = flows.AffineCoupling(
-            get_affine_coupling_net(input_shape=inputs.shape[1:], act=stax.Relu),
-            get_affine_coupling_net(input_shape=inputs.shape[1:], act=stax.Tanh),
-            get_affine_coupling_mask(input_shape=inputs.shape[1:]),
-        )
-
+        init_fun = flows.AffineCouplingSplit(transform, transform)
         for test in (returns_correct_shape, is_bijective):
             test(self, init_fun, inputs)
 
@@ -75,23 +69,24 @@ class Tests(unittest.TestCase):
         inputs = random.uniform(random.PRNGKey(0), (20, 4), minval=-10.0, maxval=10.0)
 
         input_shape = inputs.shape[1:]
-        num_hidden = 64
-        num_inputs = input_shape[-1]
+        hidden_dim = 64
+        input_dim = input_shape[-1]
 
-        input_mask = flows.get_made_mask(num_inputs, num_hidden, num_inputs, mask_type="input")
-        hidden_mask = flows.get_made_mask(num_hidden, num_hidden, num_inputs)
-        output_mask = flows.get_made_mask(num_hidden, num_inputs * 2, num_inputs, mask_type="output")
+        def autoencoder(rng, input_dim, output_dim, hidden_dim=64):
+            input_mask = flows.get_made_mask(input_dim, hidden_dim, input_dim, mask_type="input")
+            hidden_mask = flows.get_made_mask(hidden_dim, hidden_dim, input_dim, mask_type=None)
+            output_mask = flows.get_made_mask(hidden_dim, output_dim, input_dim, mask_type="output")
 
-        joiner = flows.MaskedDense(num_hidden, input_mask)
-        trunk = stax.serial(
-            stax.Relu,
-            flows.MaskedDense(num_hidden, hidden_mask),
-            stax.Relu,
-            flows.MaskedDense(num_inputs * 2, output_mask),
-        )
+            init_fun, apply_fun = stax.serial(
+                flows.MaskedDense(hidden_dim, input_mask), stax.Relu,
+                flows.MaskedDense(hidden_dim, hidden_mask), stax.Relu,
+                flows.MaskedDense(output_dim, output_mask),
+            )
+            _, params = init_fun(rng, (input_dim,))
+            return params, apply_fun
 
         for test in (returns_correct_shape, is_bijective):
-            test(self, flows.MADE(joiner, trunk, num_hidden))
+            test(self, flows.MADE(autoencoder))
 
     def test_actnorm(self):
         for test in (returns_correct_shape, is_bijective):

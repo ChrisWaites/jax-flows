@@ -56,16 +56,9 @@ def dump_obj(obj, output_path):
     pickle.dump(obj, open(output_path, 'wb'))
 
 
-def log(key, params, sample, X, output_dir, train_losses=None, val_losses=None, epsilons=None):
+def log(params, output_dir):
     make_dir(output_dir)
     dump_obj(params, output_dir + 'params.pkl')
-
-    if train_losses:
-        dump_obj(train_losses, output_dir + 'train_losses.pkl')
-    if val_losses:
-        dump_obj(val_losses, output_dir + 'val_losses.pkl')
-    if epsilons:
-        dump_obj(epsilons, output_dir + 'epsilons.pkl')
 
 
 def get_optimizer(optimizer, sched, b1=0.9, b2=0.999):

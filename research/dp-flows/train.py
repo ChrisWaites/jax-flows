@@ -27,7 +27,6 @@ def main(config):
     b2 = float(config['b2'])
     composition = config['composition'].lower()
     dataset = config['dataset']
-    delta = float(config['delta'])
     experiment = config['experiment']
     flow = config['flow']
     iterations = int(config['iterations'])
@@ -56,6 +55,9 @@ def main(config):
     num_samples = X.shape[0]
     num_inputs = input_shape[-1]
 
+    delta = 1.0 / X.shape[0]
+    print('Delta: {}'.format(delta))
+
     # Create flow
     modules = flow_utils.get_modules(flow, num_blocks, input_shape, normalization, num_hidden)
     bijection = flows.Serial(*tuple(modules))
@@ -68,12 +70,14 @@ def main(config):
     prior = flows.GMM(gmm.means_, gmm.covariances_, gmm.weights_)
     """
 
-    init_fun = flows.Flow(lambda key, shape: bijection(key, shape, init_inputs=X), prior)
+    init_fun = flows.Flow(lambda key, shape: bijection(key, shape), prior)
     temp_key, key = random.split(key)
     params, log_pdf, sample = init_fun(temp_key, input_shape)
 
     num_params = sum(np.prod(param.shape) for param in tree_util.tree_flatten(params)[0])
     l2_norm_clip = l2_norm_clip_per_param * num_params
+    print('Number of params: {}'.format(num_params))
+    print('Total l2-norm clip: {}'.format(l2_norm_clip))
 
     # Create optimizer
     scheduler = utils.get_scheduler(lr, lr_schedule)
@@ -85,8 +89,12 @@ def main(config):
         return np.sqrt(sum(np.vdot(x, x) for x in leaves))
 
     def loss(params, inputs):
-        # return np.nan_to_num(-log_pdf(params, inputs)).clip(-1e6, 1e6).mean() + weight_decay * l2(params)
-        return -log_pdf(params, inputs).mean() + weight_decay * l2(params)
+        nll = -log_pdf(params, inputs)
+        nll = np.where(np.isnan(nll), 1e6, nll)
+        nll = np.where(np.isposinf(nll), 1e6, nll)
+        nll = np.where(np.isneginf(nll), -1e6, nll)
+        return nll.mean() + weight_decay * l2(params)
+        # return -log_pdf(params, inputs).mean() + weight_decay * l2(params)
 
     def private_grad(params, batch, rng, l2_norm_clip, noise_multiplier, minibatch_size):
         def _clipped_grad(params, single_example_batch):
@@ -144,7 +152,6 @@ def main(config):
         """
 
     best_params, best_loss = None, None
-    train_losses, val_losses, epsilons = [], [], []
     pbar = tqdm(range(1, iterations + 1))
     for iteration in pbar:
         batch, X = utils.get_batch(sampling, key, X, minibatch_size, iteration)
@@ -172,24 +179,22 @@ def main(config):
             params = get_params(opt_state)
             train_loss = loss(params, X)
             val_loss = loss(params, X_val)
-
-            train_losses.append(train_loss)
-            val_losses.append(val_loss)
-            epsilons.append(epsilon)
+            test_loss = loss(params, X_test)
 
             # Update best model thus far
             if best_loss is None or val_loss < best_loss:
                 best_loss = val_loss
                 best_params = params
 
-            if log_params:
-                utils.log(key, best_params, sample, X, output_dir, train_losses, val_losses, epsilons)
+                if log_params:
+                    utils.log(best_params, output_dir)
 
             # Update progress bar
-            pbar_text = 'Train: {:.3f} Val: {:.3f} Best: {:.3f} ε: {:.3f}'.format(
+            pbar_text = 'Train: {:.3f} Val: {:.3f} Best Val: {:.3f} Test: {:.3f} ε: {:.3f}'.format(
                 train_loss,
                 val_loss,
                 best_loss,
+                test_loss,
                 epsilon,
             )
 
@@ -197,10 +202,11 @@ def main(config):
 
         # Log params and plots to output directory
         if log_params and iteration % log_params == 0:
-            utils.log(key, params, sample, X, output_dir + str(iteration) + '/')
+            utils.log(params, output_dir + str(iteration) + '/')
 
     if log_params:
-        utils.log(key, best_params, sample, X, output_dir, train_losses, val_losses, epsilons)
+        utils.log(best_params, output_dir)
+
     return {'nll': (best_loss, 0.)}
 
 

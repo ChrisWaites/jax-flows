@@ -15,65 +15,52 @@ def weight_initializer(key, shape, dtype=np.float32):
     return random.uniform(key, shape, dtype, minval=-bound, maxval=bound)
 
 
-def get_affine_coupling_net(input_shape, num_hidden=64, act=stax.Relu):
-    return stax.serial(
-        stax.Dense(num_hidden, weight_initializer, weight_initializer), # orthogonal(), zeros),
-        act,
-        stax.Dense(num_hidden, weight_initializer, weight_initializer), #  orthogonal(), zeros),
-        act,
-        stax.Dense(input_shape[-1], weight_initializer, weight_initializer), # orthogonal(), zeros),
+def transform(rng, input_dim, output_dim, hidden_dim=64, act=stax.Relu):
+    init_fun, apply_fun = stax.serial(
+        stax.Dense(hidden_dim, weight_initializer, weight_initializer), act,
+        stax.Dense(hidden_dim, weight_initializer, weight_initializer), act,
+        stax.Dense(output_dim, weight_initializer, weight_initializer),
     )
+    _, params = init_fun(rng, (input_dim,))
+    return params, apply_fun
 
 
-def get_affine_coupling_mask(input_shape):
-    mask = onp.zeros(input_shape)
-    mask[::2] = 1.0
-    return mask
+def masked_transform(rng, input_dim, output_dim, hidden_dim=64, act=stax.Relu):
+    input_mask = flows.get_made_mask(input_dim, hidden_dim, input_dim, mask_type="input")
+    hidden_mask = flows.get_made_mask(hidden_dim, hidden_dim, input_dim, mask_type=None)
+    output_mask = flows.get_made_mask(hidden_dim, output_dim, input_dim, mask_type="output")
+
+    init_fun, apply_fun = stax.serial(
+        flows.MaskedDense(hidden_dim, input_mask), act,
+        flows.MaskedDense(hidden_dim, hidden_mask), act,
+        flows.MaskedDense(output_dim, output_mask),
+    )
+    _, params = init_fun(rng, (input_dim,))
+    return params, apply_fun
 
 
 def get_modules(flow, num_blocks, input_shape, normalization, num_hidden=64):
     num_inputs = input_shape[-1]
 
-    affine_coupling_scale = get_affine_coupling_net(input_shape, num_hidden, stax.Relu)
-    affine_coupling_translate = get_affine_coupling_net(input_shape, num_hidden, stax.Tanh)
-    affine_coupling_mask = get_affine_coupling_mask(input_shape)
-
     input_mask = flows.get_made_mask(num_inputs, num_hidden, num_inputs, mask_type="input")
     hidden_mask = flows.get_made_mask(num_hidden, num_hidden, num_inputs)
     output_mask = flows.get_made_mask(num_hidden, num_inputs * 2, num_inputs, mask_type="output")
-
-    made_act = stax.Relu
-    made_joiner = flows.MaskedDense(num_hidden, input_mask)
-    made_trunk = stax.serial(
-        made_act,
-        flows.MaskedDense(num_hidden, hidden_mask),
-        made_act,
-        flows.MaskedDense(num_inputs * 2, output_mask),
-    )
 
     modules = []
     if flow == 'realnvp':
         for _ in range(num_blocks):
             modules += [
-                flows.AffineCoupling(
-                    affine_coupling_scale,
-                    affine_coupling_translate,
-                    affine_coupling_mask,
-                ),
+                flows.AffineCoupling(transform),
+                flows.Reverse(),
             ]
             if normalization:
                 modules += [
                     flows.ActNorm(),
                 ]
-            affine_coupling_mask = 1 - affine_coupling_mask
     elif flow == 'glow':
         for _ in range(num_blocks):
             modules += [
-                flows.AffineCoupling(
-                    affine_coupling_scale,
-                    affine_coupling_translate,
-                    affine_coupling_mask,
-                ),
+                flows.AffineCoupling(transform),
             ]
             if normalization:
                 modules += [
@@ -82,15 +69,10 @@ def get_modules(flow, num_blocks, input_shape, normalization, num_hidden=64):
             modules += [
                 flows.InvertibleLinear(),
             ]
-            affine_coupling_mask = 1 - affine_coupling_mask
     elif flow == 'maf':
         for _ in range(num_blocks):
             modules += [
-                flows.MADE(
-                    made_joiner,
-                    made_trunk,
-                    num_hidden,
-                ),
+                flows.MADE(masked_transform),
             ]
             if normalization:
                 modules += [
@@ -107,11 +89,7 @@ def get_modules(flow, num_blocks, input_shape, normalization, num_hidden=64):
     elif flow == 'maf-glow':
         for _ in range(num_blocks):
             modules += [
-                flows.MADE(
-                    made_joiner,
-                    made_trunk,
-                    num_hidden,
-                ),
+                flows.MADE(masked_transform),
             ]
             if normalization:
                 modules += [
@@ -123,11 +101,7 @@ def get_modules(flow, num_blocks, input_shape, normalization, num_hidden=64):
     elif flow == 'custom':
         for _ in range(num_blocks):
             modules += [
-                flows.MADE(
-                    made_joiner,
-                    made_trunk,
-                    num_hidden,
-                ),
+                flows.MADE(masked_transform),
                 flows.InvertibleLinear(),
             ]
         modules += [
