@@ -73,9 +73,10 @@ class Tests(unittest.TestCase):
         input_dim = input_shape[-1]
 
         def autoencoder(rng, input_dim, output_dim, hidden_dim=64):
-            input_mask = flows.get_made_mask(input_dim, hidden_dim, input_dim, mask_type="input")
-            hidden_mask = flows.get_made_mask(hidden_dim, hidden_dim, input_dim, mask_type=None)
-            output_mask = flows.get_made_mask(hidden_dim, output_dim, input_dim, mask_type="output")
+            input_rng, hidden_rng, output_rng = random.split(rng, 3)
+            input_mask = flows.get_made_mask(input_rng, input_dim, hidden_dim, input_dim, mask_type="input")
+            hidden_mask = flows.get_made_mask(hidden_rng, hidden_dim, hidden_dim, input_dim, mask_type=None)
+            output_mask = flows.get_made_mask(output_rng, hidden_dim, output_dim, input_dim, mask_type="output")
 
             init_fun, apply_fun = stax.serial(
                 flows.MaskedDense(hidden_dim, input_mask), stax.Relu,

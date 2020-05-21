@@ -21,7 +21,7 @@ def MaskedDense(out_dim, mask):
     return init_fun, apply_fun
 
 
-def get_made_mask(in_features, out_features, in_flow_features, mask_type=None):
+def get_made_mask(rng, in_features, out_features, in_flow_features, mask_type=None, keep_prob=None):
     if mask_type == "input":
         in_degrees = np.arange(in_features) % in_flow_features
     else:
@@ -33,7 +33,13 @@ def get_made_mask(in_features, out_features, in_flow_features, mask_type=None):
         out_degrees = np.arange(out_features) % (in_flow_features - 1)
 
     mask = np.expand_dims(out_degrees, -1) >= np.expand_dims(in_degrees, 0)
-    return np.transpose(mask).astype(np.float32)
+    mask = np.transpose(mask).astype(np.float32)
+
+    if keep_prob:
+        flip = (random.uniform(rng, mask.shape) < keep_prob).astype(np.int32)
+        mask *= flip
+
+    return mask
 
 
 def MADE(transform):
