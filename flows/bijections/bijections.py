@@ -1,10 +1,9 @@
+import jax.numpy as np
+import jax.scipy.special as spys
+import numpy as onp
 from jax import random, scipy
 from jax.nn.initializers import orthogonal
 from jax.scipy import linalg
-import jax.scipy.special as spys
-import jax.numpy as np
-import math
-import numpy as onp
 
 # Each layer constructor function returns an init_fun where...
 #
@@ -49,6 +48,7 @@ def ActNorm():
             return outputs, log_det_jacobian
 
         return (log_weight, bias), direct_fun, inverse_fun
+
     return init_fun
 
 
@@ -99,6 +99,7 @@ def AffineCouplingSplit(scale, translate):
             return outputs, log_det_jacobian
 
         return (scale_params, translate_params), direct_fun, inverse_fun
+
     return init_fun
 
 
@@ -139,6 +140,7 @@ def AffineCoupling(transform):
             return outputs, log_det_jacobian
 
         return params, direct_fun, inverse_fun
+
     return init_fun
 
 
@@ -213,6 +215,7 @@ def BatchNorm(momentum=0.9):
             return outputs, log_det_jacobian
 
         return (log_weight, bias), direct_fun, inverse_fun
+
     return init_fun
 
 
@@ -226,6 +229,7 @@ def Invert(bijection):
     def init_fun(rng, input_shape, **kwargs):
         params, direct_fun, inverse_fun = bijection(rng, input_shape)
         return params, inverse_fun, direct_fun
+
     return init_fun
 
 
@@ -255,6 +259,7 @@ def FixedInvertibleLinear():
             return outputs, log_det_jacobian
 
         return (), direct_fun, inverse_fun
+
     return init_fun
 
 
@@ -273,11 +278,11 @@ def InvertibleLinear():
         P, L, U = scipy.linalg.lu(W)
         S = np.diag(U)
         U = np.triu(U, 1)
-        I = np.eye(dim)
+        identity = np.eye(dim)
 
         def direct_fun(params, inputs, **kwargs):
             L, U, S = params
-            L = np.tril(L, -1) + I
+            L = np.tril(L, -1) + identity
             U = np.triu(U, 1)
             W = P @ L @ (U + np.diag(S))
 
@@ -287,7 +292,7 @@ def InvertibleLinear():
 
         def inverse_fun(params, inputs, **kwargs):
             L, U, S = params
-            L = np.tril(L, -1) + I
+            L = np.tril(L, -1) + identity
             U = np.triu(U, 1)
             W = P @ L @ (U + np.diag(S))
 
@@ -296,6 +301,7 @@ def InvertibleLinear():
             return outputs, log_det_jacobian
 
         return (L, U, S), direct_fun, inverse_fun
+
     return init_fun
 
 
@@ -336,15 +342,15 @@ def Reverse():
 
     def init_fun(rng, input_shape, **kwargs):
         perm = np.array(np.arange(onp.prod(input_shape))[::-1]).reshape(input_shape)
-        inv_perm = np.argsort(perm)
 
         def direct_fun(params, inputs, **kwargs):
             return inputs[:, perm], np.zeros(inputs.shape[:1])
 
         def inverse_fun(params, inputs, **kwargs):
-            return inputs[:, inv_perm], np.zeros(inputs.shape[:1])
+            return inputs[:, perm], np.zeros(inputs.shape[:1])
 
         return (), direct_fun, inverse_fun
+
     return init_fun
 
 
@@ -378,6 +384,7 @@ def Shuffle():
             return inputs[:, inv_perm], np.zeros(inputs.shape[:1])
 
         return (), direct_fun, inverse_fun
+
     return init_fun
 
 
@@ -410,6 +417,7 @@ def Sigmoid(clip_before_logit=True):
             return outputs, log_det_jacobian
 
         return (), direct_fun, inverse_fun
+
     return init_fun
 
 
@@ -462,4 +470,5 @@ def Serial(*init_funs):
             return feed_forward(reversed(params), reversed(inverse_funs), inputs)
 
         return all_params, direct_fun, inverse_fun
+
     return init_fun

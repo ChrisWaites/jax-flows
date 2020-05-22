@@ -1,12 +1,9 @@
 import unittest
 
 import jax.numpy as np
-import numpy as onp
 from jax import random
-from jax.experimental import stax
-from jax.nn.initializers import orthogonal, zeros
-from sklearn import mixture, datasets
 from jax.scipy.stats import multivariate_normal
+from sklearn import datasets, mixture
 
 import flows
 

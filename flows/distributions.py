@@ -1,9 +1,7 @@
-import math
-
 import jax.numpy as np
-from jax.scipy.stats import multivariate_normal
 from jax import random
 from jax.scipy.special import logsumexp
+from jax.scipy.stats import multivariate_normal
 
 
 def Normal():
@@ -11,6 +9,7 @@ def Normal():
     Returns:
         A function mapping ``(rng, input_shape)`` to a ``(params, log_pdf, sample)`` triplet.
     """
+
     def init_fun(rng, input_shape):
         mean = np.zeros(input_shape)
         covariance = np.eye(np.prod(input_shape))
@@ -22,6 +21,7 @@ def Normal():
             return random.multivariate_normal(rng, mean, covariance, (num_samples,))
 
         return (), log_pdf, sample
+
     return init_fun
 
 
@@ -44,6 +44,7 @@ def GMM(means, covariances, weights):
             return np.squeeze(np.take_along_axis(samples, idx, -1))
 
         return (), log_pdf, sample
+
     return init_fun
 
 
@@ -68,6 +69,7 @@ def Flow(transformation, prior=Normal()):
         >>> init_fun = flows.Flow(transformation, Normal())
         >>> params, log_pdf, sample = init_fun(rng, input_shape)
     """
+
     def init_fun(rng, input_shape):
         transformation_rng, prior_rng = random.split(rng)
 
@@ -84,4 +86,5 @@ def Flow(transformation, prior=Normal()):
             return inverse_fun(params, prior_samples)[0]
 
         return params, log_pdf, sample
+
     return init_fun

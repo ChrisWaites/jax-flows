@@ -27,20 +27,30 @@ def get_transform(hidden_dim=64):
     return transform
 
 
-def get_masked_transform(hidden_dim=64):
-    def masked_transform(rng, input_dim, output_dim, act=stax.Relu):
-        input_rng, hidden_rng, output_rng, rng = random.split(rng, 4)
-        input_mask = flows.get_made_mask(input_rng, input_dim, hidden_dim, input_dim, mask_type="input")
-        hidden_mask = flows.get_made_mask(hidden_rng, hidden_dim, hidden_dim, input_dim, mask_type=None)
-        output_mask = flows.get_made_mask(output_rng, hidden_dim, output_dim, input_dim, mask_type="output")
-        init_fun, apply_fun = stax.serial(
-            flows.MaskedDense(hidden_dim, input_mask), act,
-            flows.MaskedDense(hidden_dim, hidden_mask), act,
-            flows.MaskedDense(output_dim, output_mask),
-        )
-        _, params = init_fun(rng, (input_dim,))
-        return params, apply_fun
-    return masked_transform
+def get_masks(input_dim, hidden_dim=64, num_hidden=1):
+    masks = []
+    input_degrees = np.arange(input_dim)
+    degrees = [input_degrees]
+
+    for n_h in range(num_hidden + 1):
+        degrees += [np.arange(hidden_dim) % (input_dim - 1)]
+    degrees += [input_degrees % input_dim - 1]
+
+    for (d0, d1) in zip(degrees[:-1], degrees[1:]):
+        masks += [np.transpose(np.expand_dims(d1, -1) >= np.expand_dims(d0, 0)).astype(np.float32)]
+    return masks
+
+
+def masked_transform(rng, input_dim):
+    masks = get_masks(input_dim, hidden_dim=64, num_hidden=1)
+    act = stax.Relu
+    init_fun, apply_fun = stax.serial(
+        flows.MaskedDense(masks[0]), act,
+        flows.MaskedDense(masks[1]), act,
+        flows.MaskedDense(masks[2].tile(2)),
+    )
+    _, params = init_fun(rng, (input_dim,))
+    return params, apply_fun
 
 
 def get_modules(flow, num_blocks, input_shape, normalization, num_hidden=64):
@@ -72,13 +82,7 @@ def get_modules(flow, num_blocks, input_shape, normalization, num_hidden=64):
     elif flow == 'maf':
         for _ in range(num_blocks):
             modules += [
-                flows.MADE(get_masked_transform(num_hidden)),
-            ]
-            if normalization:
-                modules += [
-                    flows.BatchNorm(),
-                ]
-            modules += [
+                flows.MADE(masked_transform),
                 flows.Reverse(),
             ]
     elif flow == 'neural-spline':
@@ -89,7 +93,7 @@ def get_modules(flow, num_blocks, input_shape, normalization, num_hidden=64):
     elif flow == 'maf-glow':
         for _ in range(num_blocks):
             modules += [
-                flows.MADE(get_masked_transform(num_hidden)),
+                flows.MADE(masked_transform),
             ]
             if normalization:
                 modules += [
@@ -101,7 +105,7 @@ def get_modules(flow, num_blocks, input_shape, normalization, num_hidden=64):
     elif flow == 'custom':
         for _ in range(num_blocks):
             modules += [
-                flows.MADE(get_masked_transform(num_hidden)),
+                flows.MADE(masked_transform),
                 flows.InvertibleLinear(),
             ]
         modules += [
