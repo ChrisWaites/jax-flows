@@ -54,7 +54,7 @@ We can construct a sequence of bijections using `flows.Serial`. The result is ju
 
 ```python
 init_fun = flows.Serial(
-    flows.AffineCoupling()
+    flows.AffineCoupling(transformation),
     flows.InvertibleLinear(),
     flows.ActNorm(),
 )
@@ -84,12 +84,9 @@ Under this definition, a normalizing flow model is just a `distribution`. But to
 
 ```python
 bijection = flows.Serial(
-    flows.AffineCoupling(),
+    flows.AffineCoupling(transformation),
     flows.InvertibleLinear(),
-    flows.ActNorm()
-    flows.AffineCoupling(),
-    flows.InvertibleLinear(),
-    flows.ActNorm()
+    flows.ActNorm(),
 )
 
 prior = flows.Normal()
@@ -117,11 +114,11 @@ def step(i, opt_state, inputs):
 Then execute a standard JAX training loop.
 
 ```python
-batch_size = 32
-itercount = itertools.count()
+batch_size, itercount = 32, itertools.count()
+
 for epoch in range(num_epochs):
     npr.shuffle(X)
-    for batch_index in range(0, len(X), batch_size):
+    for batch_index in range(0, X.shape[0], batch_size):
         opt_state = step(
             next(itercount),
             opt_state,

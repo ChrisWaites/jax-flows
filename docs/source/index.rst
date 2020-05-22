@@ -17,7 +17,11 @@ Transformations
 
 .. autofunction:: flows.AffineCoupling
 
+.. autofunction:: flows.AffineCouplingSplit
+
 .. autofunction:: flows.BatchNorm
+
+.. autofunction:: flows.FixedInvertibleLinear
 
 .. autofunction:: flows.Invert
 
@@ -29,16 +33,18 @@ Transformations
 
 .. autofunction:: flows.Reverse
 
+.. autofunction:: flows.Serial
+
 .. autofunction:: flows.Shuffle
 
 .. autofunction:: flows.Sigmoid
-
-.. autofunction:: flows.Serial
 
 Distributions
 -------------
 
 .. autofunction:: flows.Flow
+
+.. autofunction:: flows.GMM
 
 .. autofunction:: flows.Normal
 
