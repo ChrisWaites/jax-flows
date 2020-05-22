@@ -7,12 +7,12 @@ from jax.scipy.stats import multivariate_normal
 def Normal():
     """
     Returns:
-        A function mapping ``(rng, input_shape)`` to a ``(params, log_pdf, sample)`` triplet.
+        A function mapping ``(rng, input_dim)`` to a ``(params, log_pdf, sample)`` triplet.
     """
 
-    def init_fun(rng, input_shape):
-        mean = np.zeros(input_shape)
-        covariance = np.eye(np.prod(input_shape))
+    def init_fun(rng, input_dim):
+        mean = np.zeros(input_dim)
+        covariance = np.eye(input_dim)
 
         def log_pdf(params, inputs):
             return multivariate_normal.logpdf(inputs, mean, covariance)
@@ -26,7 +26,7 @@ def Normal():
 
 
 def GMM(means, covariances, weights):
-    def init_fun(rng, input_shape):
+    def init_fun(rng, input_dim):
         def log_pdf(params, inputs):
             cluster_lls = []
             for log_weight, mean, cov in zip(np.log(weights), means, covariances):
@@ -51,30 +51,30 @@ def GMM(means, covariances, weights):
 def Flow(transformation, prior=Normal()):
     """
     Args:
-        transformation: a function mapping ``(rng, input_shape)`` to a
+        transformation: a function mapping ``(rng, input_dim)`` to a
             ``(params, direct_fun, inverse_fun)`` triplet
-        prior: a function mapping ``(rng, input_shape)`` to a
+        prior: a function mapping ``(rng, input_dim)`` to a
             ``(params, log_pdf, sample)`` triplet
 
     Returns:
-        A function mapping ``(rng, input_shape)`` to a ``(params, log_pdf, sample)`` triplet.
+        A function mapping ``(rng, input_dim)`` to a ``(params, log_pdf, sample)`` triplet.
 
     Examples:
         >>> import flows
-        >>> input_shape, rng = (3,), random.PRNGKey(0)
+        >>> input_dim, rng = 3, random.PRNGKey(0)
         >>> transformation = flows.Serial(
         ...     flows.Reverse(),
         ...     flows.Reverse()
         ... )
         >>> init_fun = flows.Flow(transformation, Normal())
-        >>> params, log_pdf, sample = init_fun(rng, input_shape)
+        >>> params, log_pdf, sample = init_fun(rng, input_dim)
     """
 
-    def init_fun(rng, input_shape):
+    def init_fun(rng, input_dim):
         transformation_rng, prior_rng = random.split(rng)
 
-        params, direct_fun, inverse_fun = transformation(transformation_rng, input_shape)
-        prior_params, prior_log_pdf, prior_sample = prior(prior_rng, input_shape)
+        params, direct_fun, inverse_fun = transformation(transformation_rng, input_dim)
+        prior_params, prior_log_pdf, prior_sample = prior(prior_rng, input_dim)
 
         def log_pdf(params, inputs):
             u, log_det = direct_fun(params, inputs)

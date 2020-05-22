@@ -1,6 +1,5 @@
 import jax.numpy as np
 import jax.scipy.special as spys
-import numpy as onp
 from jax import random, scipy
 from jax.nn.initializers import orthogonal
 from jax.scipy import linalg
@@ -22,18 +21,18 @@ def ActNorm():
     (https://arxiv.org/abs/1807.03039).
 
     Returns:
-        An ``init_fun`` mapping ``(rng, input_shape)`` to a ``(params, direct_fun, inverse_fun)`` triplet.
+        An ``init_fun`` mapping ``(rng, input_dim)`` to a ``(params, direct_fun, inverse_fun)`` triplet.
     """
 
-    def init_fun(rng, input_shape, **kwargs):
+    def init_fun(rng, input_dim, **kwargs):
         init_inputs = kwargs.pop("init_inputs", None)
 
         if not (init_inputs is None):
             log_weight = np.log(1.0 / (init_inputs.std(0) + 1e-6))
             bias = init_inputs.mean(0)
         else:
-            log_weight = np.zeros(input_shape)
-            bias = np.zeros(input_shape)
+            log_weight = np.zeros(input_dim)
+            bias = np.zeros(input_dim)
 
         def direct_fun(params, inputs, **kwargs):
             log_weight, bias = params
@@ -61,18 +60,17 @@ def AffineCouplingSplit(scale, translate):
         translate: An ``(params, apply_fun)`` pair characterizing a trainable translation function
 
     Returns:
-        An ``init_fun`` mapping ``(rng, input_shape)`` to a ``(params, direct_fun, inverse_fun)`` triplet.
+        An ``init_fun`` mapping ``(rng, input_dim)`` to a ``(params, direct_fun, inverse_fun)`` triplet.
     """
 
-    def init_fun(rng, input_shape, **kwargs):
-        dim = input_shape[-1]
-        cutoff = dim // 2
+    def init_fun(rng, input_dim, **kwargs):
+        cutoff = input_dim // 2
 
         scale_rng, rng = random.split(rng)
-        scale_params, scale_apply_fun = scale(scale_rng, cutoff, dim - cutoff)
+        scale_params, scale_apply_fun = scale(scale_rng, cutoff, input_dim - cutoff)
 
         translate_rng, rng = random.split(rng)
-        translate_params, translate_apply_fun = translate(translate_rng, cutoff, dim - cutoff)
+        translate_params, translate_apply_fun = translate(translate_rng, cutoff, input_dim - cutoff)
 
         def direct_fun(params, inputs, **kwargs):
             scale_params, translate_params = params
@@ -111,13 +109,12 @@ def AffineCoupling(transform):
         net: An ``(params, apply_fun)`` pair characterizing a trainable translation function
 
     Returns:
-        An ``init_fun`` mapping ``(rng, input_shape)`` to a ``(params, direct_fun, inverse_fun)`` triplet.
+        An ``init_fun`` mapping ``(rng, input_dim)`` to a ``(params, direct_fun, inverse_fun)`` triplet.
     """
 
-    def init_fun(rng, input_shape, **kwargs):
-        dim = input_shape[-1]
-        cutoff = dim // 2
-        params, apply_fun = transform(rng, cutoff, 2 * (dim - cutoff))
+    def init_fun(rng, input_dim, **kwargs):
+        cutoff = input_dim // 2
+        params, apply_fun = transform(rng, cutoff, 2 * (input_dim - cutoff))
 
         def direct_fun(params, inputs, **kwargs):
             lower, upper = inputs[:, :cutoff], inputs[:, cutoff:]
@@ -149,12 +146,12 @@ def BatchNorm(momentum=0.9):
     (https://arxiv.org/abs/1605.08803).
 
     Returns:
-        An ``init_fun`` mapping ``(rng, input_shape)`` to a ``(params, direct_fun, inverse_fun)`` triplet.
+        An ``init_fun`` mapping ``(rng, input_dim)`` to a ``(params, direct_fun, inverse_fun)`` triplet.
     """
 
-    def init_fun(rng, input_shape, **kwargs):
-        log_weight = np.zeros(input_shape)
-        bias = np.zeros(input_shape)
+    def init_fun(rng, input_dim, **kwargs):
+        log_weight = np.zeros(input_dim)
+        bias = np.zeros(input_dim)
         eps = 1e-5
 
         # Which is better, keeping track of state as an edge case for batchnorm or changing
@@ -166,8 +163,8 @@ def BatchNorm(momentum=0.9):
             log_weight, bias = params
 
             if "running_mean" not in state:
-                state["running_mean"] = np.zeros(input_shape)
-                state["running_var"] = np.ones(input_shape)
+                state["running_mean"] = np.zeros(input_dim)
+                state["running_var"] = np.ones(input_dim)
             running_mean, running_var = state["running_mean"], state["running_var"]
 
             if evaluation:
@@ -197,8 +194,8 @@ def BatchNorm(momentum=0.9):
             log_weight, bias = params
 
             if "running_mean" not in state:
-                state["running_mean"] = np.zeros(input_shape)
-                state["running_var"] = np.ones(input_shape)
+                state["running_mean"] = np.zeros(input_dim)
+                state["running_var"] = np.ones(input_dim)
             running_mean, running_var = state["running_mean"], state["running_var"]
 
             if evaluation:
@@ -223,11 +220,11 @@ def Invert(bijection):
     """Inverts a tranformation so that its ``direct_fun`` is its ``inverse_fun`` and vice versa.
 
     Returns:
-        An ``init_fun`` mapping ``(rng, input_shape)`` to a ``(params, direct_fun, inverse_fun)`` triplet.
+        An ``init_fun`` mapping ``(rng, input_dim)`` to a ``(params, direct_fun, inverse_fun)`` triplet.
     """
 
-    def init_fun(rng, input_shape, **kwargs):
-        params, direct_fun, inverse_fun = bijection(rng, input_shape)
+    def init_fun(rng, input_dim, **kwargs):
+        params, direct_fun, inverse_fun = bijection(rng, input_dim)
         return params, inverse_fun, direct_fun
 
     return init_fun
@@ -238,13 +235,11 @@ def FixedInvertibleLinear():
     (https://arxiv.org/abs/1605.08803).
 
     Returns:
-        An ``init_fun`` mapping ``(rng, input_shape)`` to a ``(params, direct_fun, inverse_fun)`` triplet.
+        An ``init_fun`` mapping ``(rng, input_dim)`` to a ``(params, direct_fun, inverse_fun)`` triplet.
     """
 
-    def init_fun(rng, input_shape, **kwargs):
-        dim = input_shape[-1]
-
-        W = orthogonal()(rng, (dim, dim))
+    def init_fun(rng, input_dim, **kwargs):
+        W = orthogonal()(rng, (input_dim, input_dim))
         W_inv = linalg.inv(W)
         W_log_det = np.linalg.slogdet(W)[-1]
 
@@ -268,17 +263,15 @@ def InvertibleLinear():
     (https://arxiv.org/abs/1605.08803).
 
     Returns:
-        An ``init_fun`` mapping ``(rng, input_shape)`` to a ``(params, direct_fun, inverse_fun)`` triplet.
+        An ``init_fun`` mapping ``(rng, input_dim)`` to a ``(params, direct_fun, inverse_fun)`` triplet.
     """
 
-    def init_fun(rng, input_shape, **kwargs):
-        dim = input_shape[-1]
-
-        W = orthogonal()(rng, (dim, dim))
+    def init_fun(rng, input_dim, **kwargs):
+        W = orthogonal()(rng, (input_dim, input_dim))
         P, L, U = scipy.linalg.lu(W)
         S = np.diag(U)
         U = np.triu(U, 1)
-        identity = np.eye(dim)
+        identity = np.eye(input_dim)
 
         def direct_fun(params, inputs, **kwargs):
             L, U, S = params
@@ -316,7 +309,7 @@ def Logit(clip_before_logit=True):
         clip_before_logit: Whether to clip values to range [1e-5, 1 - 1e-5] before being passed through logit.
 
     Returns:
-        An ``init_fun`` mapping ``(rng, input_shape)`` to a ``(params, direct_fun, inverse_fun)`` triplet.
+        An ``init_fun`` mapping ``(rng, input_dim)`` to a ``(params, direct_fun, inverse_fun)`` triplet.
     """
     return Invert(Sigmoid(clip_before_logit))
 
@@ -326,22 +319,22 @@ def Reverse():
     (https://arxiv.org/abs/1605.08803).
 
     Returns:
-        An ``init_fun`` mapping ``(rng, input_shape)`` to a ``(params, direct_fun, inverse_fun)`` triplet.
+        An ``init_fun`` mapping ``(rng, input_dim)`` to a ``(params, direct_fun, inverse_fun)`` triplet.
 
     Examples:
-        >>> num_examples, input_shape, tol = 20, (3,), 1e-4
+        >>> num_examples, input_dim, tol = 20, 3, 1e-4
         >>> layer_rng, input_rng = random.split(random.PRNGKey(0))
-        >>> inputs = random.uniform(input_rng, (num_examples,) + input_shape)
+        >>> inputs = random.uniform(input_rng, (num_examples, input_dim))
         >>> init_fun = Reverse()
-        >>> params, direct_fun, inverse_fun = init_fun(layer_rng, input_shape)
+        >>> params, direct_fun, inverse_fun = init_fun(layer_rng, input_dim)
         >>> mapped_inputs = direct_fun(params, inputs)[0]
         >>> reconstructed_inputs = inverse_fun(params, mapped_inputs)[0]
-        >>> onp.array_equal(inputs, reconstructed_inputs)
+        >>> np.allclose(inputs, reconstructed_inputs).item()
         True
     """
 
-    def init_fun(rng, input_shape, **kwargs):
-        perm = np.array(np.arange(onp.prod(input_shape))[::-1]).reshape(input_shape)
+    def init_fun(rng, input_dim, **kwargs):
+        perm = np.arange(input_dim)[::-1]
 
         def direct_fun(params, inputs, **kwargs):
             return inputs[:, perm], np.zeros(inputs.shape[:1])
@@ -359,22 +352,22 @@ def Shuffle():
     (https://arxiv.org/abs/1605.08803).
 
     Returns:
-        An ``init_fun`` mapping ``(rng, input_shape)`` to a ``(params, direct_fun, inverse_fun)`` triplet.
+        An ``init_fun`` mapping ``(rng, input_dim)`` to a ``(params, direct_fun, inverse_fun)`` triplet.
 
     Examples:
-        >>> num_examples, input_shape, tol = 20, (3,), 1e-4
+        >>> num_examples, input_dim, tol = 20, 3, 1e-4
         >>> layer_rng, input_rng = random.split(random.PRNGKey(0))
-        >>> inputs = random.uniform(input_rng, (num_examples,) + input_shape)
+        >>> inputs = random.uniform(input_rng, (num_examples, input_dim))
         >>> init_fun = Shuffle()
-        >>> params, direct_fun, inverse_fun = init_fun(layer_rng, input_shape)
+        >>> params, direct_fun, inverse_fun = init_fun(layer_rng, input_dim)
         >>> mapped_inputs = direct_fun(params, inputs)[0]
         >>> reconstructed_inputs = inverse_fun(params, mapped_inputs)[0]
-        >>> onp.array_equal(inputs, reconstructed_inputs)
+        >>> np.allclose(inputs, reconstructed_inputs).item()
         True
     """
 
-    def init_fun(rng, input_shape, **kwargs):
-        perm = random.permutation(rng, np.arange(onp.prod(input_shape))).reshape(input_shape)
+    def init_fun(rng, input_dim, **kwargs):
+        perm = random.permutation(rng, np.arange(input_dim))
         inv_perm = np.argsort(perm)
 
         def direct_fun(params, inputs, **kwargs):
@@ -399,10 +392,10 @@ def Sigmoid(clip_before_logit=True):
         clip_before_logit: Whether to clip values to range [1e-5, 1 - 1e-5] before being passed through logit.
 
     Returns:
-        An ``init_fun`` mapping ``(rng, input_shape)`` to a ``(params, direct_fun, inverse_fun)`` triplet.
+        An ``init_fun`` mapping ``(rng, input_dim)`` to a ``(params, direct_fun, inverse_fun)`` triplet.
     """
 
-    def init_fun(rng, input_shape, **kwargs):
+    def init_fun(rng, input_dim, **kwargs):
         def direct_fun(params, inputs, **kwargs):
             outputs = spys.expit(inputs)
             log_det_jacobian = np.log(spys.expit(inputs) * (1 - spys.expit(inputs))).sum(-1)
@@ -427,27 +420,27 @@ def Serial(*init_funs):
         *init_funs: Multiple bijections in sequence
 
     Returns:
-        An ``init_fun`` mapping ``(rng, input_shape)`` to a ``(params, direct_fun, inverse_fun)`` triplet.
+        An ``init_fun`` mapping ``(rng, input_dim)`` to a ``(params, direct_fun, inverse_fun)`` triplet.
 
     Examples:
-        >>> num_examples, input_shape, tol = 20, (3,), 1e-4
+        >>> num_examples, input_dim, tol = 20, 3, 1e-4
         >>> layer_rng, input_rng = random.split(random.PRNGKey(0))
-        >>> inputs = random.uniform(input_rng, (num_examples,) + input_shape)
+        >>> inputs = random.uniform(input_rng, (num_examples, input_dim))
         >>> init_fun = Serial(Shuffle(), Shuffle())
-        >>> params, direct_fun, inverse_fun = init_fun(layer_rng, input_shape)
+        >>> params, direct_fun, inverse_fun = init_fun(layer_rng, input_dim)
         >>> mapped_inputs = direct_fun(params, inputs)[0]
         >>> reconstructed_inputs = inverse_fun(params, mapped_inputs)[0]
-        >>> onp.array_equal(inputs, reconstructed_inputs)
+        >>> np.allclose(inputs, reconstructed_inputs).item()
         True
     """
 
-    def init_fun(rng, input_shape, **kwargs):
+    def init_fun(rng, input_dim, **kwargs):
         init_inputs = kwargs.pop("init_inputs", None)
 
         all_params, direct_funs, inverse_funs = [], [], []
         for init_fun in init_funs:
             rng, layer_rng = random.split(rng)
-            param, direct_fun, inverse_fun = init_fun(layer_rng, input_shape, init_inputs=init_inputs)
+            param, direct_fun, inverse_fun = init_fun(layer_rng, input_dim, init_inputs=init_inputs)
 
             all_params.append(param)
             direct_funs.append(direct_fun)

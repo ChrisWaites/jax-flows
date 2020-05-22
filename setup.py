@@ -1,11 +1,4 @@
 from setuptools import setup, find_packages
-from pip._internal.req import parse_requirements
-
-with open('README.md', 'r') as f:
-    long_description = f.read()
-
-install_reqs = parse_requirements('requirements.txt', session=False)
-requirements = [str(ir.req) for ir in install_reqs]
 
 extras = {}
 extras['docs'] = ['recommonmark', 'sphinx', 'sphinx-markdown-tables', 'sphinx-rtd-theme']
@@ -15,11 +8,11 @@ extras['dev'] = extras['testing'] + extras['quality']
 
 setup(
     name='jax-flows',
-    version='0.0.0',
+    version='0.0.1',
     author='Chris Waites',
     author_email='cwaites10@gmail.com',
     description='Normalizing Flows for JAX',
-    long_description=long_description,
+    long_description=open('README.md').read(),
     long_description_content_type="text/markdown",
     license='MIT',
     url='http://github.com/ChrisWaites/jax-flows',
@@ -29,6 +22,7 @@ setup(
         'jaxlib',
         'numpy',
         'scipy',
+        'sklearn',
     ],
     extras_require=extras,
     classifiers=[

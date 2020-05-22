@@ -243,7 +243,6 @@ def NeuralSplineAutoregressive(dim, K=5, B=3, hidden_dim=8, base_network=FCNN):
 
 def NeuralSplineCoupling(K=5, B=3, hidden_dim=8, network=FCNN):
     def init_fun(rng, dim, **kwargs):
-        dim = dim[0]
         f1_rng, f2_rng = random.split(rng)
 
         f1_init_fun, f1_apply_fun = network((3 * K - 1) * dim // 2, hidden_dim)

@@ -12,21 +12,21 @@
     <img alt="Documentation" src="https://img.shields.io/website/http/jax-flows.readthedocs.io.svg?down_color=red&down_message=offline&up_message=online">
 </a>
 
-<p>Implementations of normalizing flows (RealNVP, GLOW, MAF) in the <a href="https://github.com/google/jax/">JAX</a> deep learning framework.</p>
+<p>Implementations of normalizing flows (RealNVP, Glow, MAF) in the <a href="https://github.com/google/jax/">JAX</a> deep learning framework.</p>
 
 ## What are normalizing flows?
 
-[Normalizing flow models](http://akosiorek.github.io/ml/2018/04/03/norm_flows.html) are _generative models_. That is, they infer the underlying probability distribution which generated a given dataset. With that distribution we can do a number of interesting things, namely query probability densities and sample new realistic points.
+[Normalizing flow models](http://akosiorek.github.io/ml/2018/04/03/norm_flows.html) are _generative models_, i.e. they infer the underlying probability distribution of an observed dataset. With that distribution we can do a number of interesting things, namely sample new realistic points and query probability densities.
 
 ## Why JAX?
 
 A few reasons!
 
-1) JAX encourages a functional style. When writing a layer, I didn't want people to worry about PyTorch or TensorFlow boilerplate and how their code has to fit into "the system" (e.g. do I have to keep track of `self.training` here?) _All_ you have to worry about is writing a vanilla python function which, given a set of inputs, returns the correct set of outputs. You could effectively have no knowledge of the encompassing framework and things would still work.
+1) JAX encourages a functional style. When writing a layer, I didn't want people to worry about PyTorch or TensorFlow boilerplate and how their code has to fit into "the system" (e.g. do I have to keep track of `self.training` here?) _All_ you have to worry about is writing a vanilla python function which, given an ndarray, returns the correct set of outputs. You could develop your own layers with effectively no knowledge of the encompassing framework.
 
-2) JAX has a really flexible automatic differentiation system. So flexible, in fact, that you can (basically) write arbitrary python functions (including for loops, if statements, etc.) and automatically compute their jacobian with a call to `jax.jacfwd`. So, in theory, you could write a normalizing flow layer and automatically compute its jacobian's log determinant without having to do so manually (although we're not quite there yet).
+2) JAX's [random number generation system](https://github.com/google/jax/blob/master/design_notes/prng.md) places reproducibility first. To get a sense for this, when you start to parallelize a system, centralized state-based models for PRNG a la `torch.manual_seed()` or `tf.random.set_seed()` start to yield inconsistent results. Given that randomness is such a central component to work in this area, I thought that uncompromising reproducibility would be a nice feature.
 
-3) JAX's [random number generation system](https://github.com/google/jax/blob/master/design_notes/prng.md) places reproducibility first. To get a sense for this, when you start to parallelize a system, centralized state-based models for PRNG a la `torch.manual_seed()` or `tf.random.set_seed()` start to yield inconsistent results. Given that randomness is such a central component to work in this area, I thought that uncompromising reproducibility would be a nice feature.
+3) JAX has a really flexible automatic differentiation system. So flexible, in fact, that you can (basically) write arbitrary python functions (including for loops, if statements, etc.) and automatically compute their jacobian with a call to `jax.jacfwd`. So, in theory, you could write a normalizing flow layer and automatically compute its jacobian's log determinant without having to do so manually (although we're not quite there yet).
 
 ## How do things work?
 
@@ -39,13 +39,13 @@ A `bijection` is a parameterized invertible function.
 ```python
 init_fun = flows.InvertibleLinear()
 
-params, direct_fun, inverse_fun = init_fun(rng, input_shape)
+params, direct_fun, inverse_fun = init_fun(rng, input_dim=5)
 
 # Transform inputs
 transformed_inputs, log_det_jacobian_direct = direct_fun(params, inputs)
 
 # Reconstruct original inputs
-reconstructed_inputs, log_det_jacobian_inverse = inverse_fun(params, inputs)
+reconstructed_inputs, log_det_jacobian_inverse = inverse_fun(params, transformed_inputs)
 
 assert np.array_equal(inputs, reconstructed_inputs)
 ```
@@ -59,7 +59,7 @@ init_fun = flows.Serial(
     flows.ActNorm(),
 )
 
-params, direct_fun, inverse_fun = init_fun(rng, input_shape)
+params, direct_fun, inverse_fun = init_fun(rng, input_dim=5)
 ```
 
 ### Distributions
@@ -69,7 +69,7 @@ A `distribution` is characterized by a probability density querying function, a 
 ```python
 init_fun = flows.Normal()
 
-params, log_pdf, sample = init_fun(rng, input_shape)
+params, log_pdf, sample = init_fun(rng, input_dim=5)
 
 # Query probability density of points
 log_pdfs = log_pdf(params, inputs)
@@ -96,7 +96,7 @@ prior = flows.Normal()
 
 init_fun = flows.Flow(bijection, prior)
 
-params, log_pdf, sample = init_fun(rng, input_shape)
+params, log_pdf, sample = init_fun(rng, input_dim=5)
 ```
 
 ### How do I train a model?
@@ -118,7 +118,6 @@ Then execute a standard JAX training loop.
 
 ```python
 batch_size = 32
-
 itercount = itertools.count()
 for epoch in range(num_epochs):
     npr.shuffle(X)

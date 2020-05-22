@@ -28,12 +28,11 @@ def MADE(transform):
         transform: maps inputs of dimension ``num_inputs`` to ``2 * num_inputs``
 
     Returns:
-        An ``init_fun`` mapping ``(rng, input_shape)`` to a ``(params, direct_fun, inverse_fun)`` triplet.
+        An ``init_fun`` mapping ``(rng, input_dim)`` to a ``(params, direct_fun, inverse_fun)`` triplet.
     """
 
-    def init_fun(rng, input_shape, **kwargs):
-        dim = input_shape[-1]
-        params, apply_fun = transform(rng, dim)
+    def init_fun(rng, input_dim, **kwargs):
+        params, apply_fun = transform(rng, input_dim)
 
         def direct_fun(params, inputs, **kwargs):
             log_weight, bias = apply_fun(params, inputs).split(2, axis=1)

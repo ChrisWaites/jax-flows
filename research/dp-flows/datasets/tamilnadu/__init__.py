@@ -1,1 +1,0 @@
-from .tamilnadu import *
