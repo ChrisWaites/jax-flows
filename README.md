@@ -2,9 +2,11 @@
 
 # Normalizing Flows in JAX
 
+<!--
 <a href="https://circleci.com/gh/ChrisWaites/jax-flows">
     <img alt="Build" src="https://img.shields.io/circleci/build/github/ChrisWaites/jax-flows/master">
 </a>
+-->
 <a href="https://github.com/ChrisWaites/jax-flows/blob/master/LICENSE">
     <img alt="GitHub" src="https://img.shields.io/github/license/ChrisWaites/jax-flows.svg?color=blue">
 </a>

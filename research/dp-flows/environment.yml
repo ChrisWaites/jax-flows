@@ -1,0 +1,50 @@
+name: dp-flows
+channels:
+  - defaults
+dependencies:
+  - _libgcc_mutex=0.1
+  - ca-certificates=2020.1.1
+  - certifi=2020.4.5.1
+  - ld_impl_linux-64=2.33.1
+  - libedit=3.1.20181209
+  - libffi=3.3
+  - libgcc-ng=9.1.0
+  - libstdcxx-ng=9.1.0
+  - ncurses=6.2
+  - openssl=1.1.1g
+  - python=3.7.7
+  - readline=8.0
+  - setuptools=46.4.0
+  - sqlite=3.31.1
+  - tk=8.6.8
+  - wheel=0.34.2
+  - xz=5.2.5
+  - zlib=1.2.11
+  - pip:
+    - absl-py==0.9.0
+    - cycler==0.10.0
+    - future==0.18.2
+    - h5py==2.10.0
+    - jax==0.1.76
+    - jaxlib==0.1.55
+    - joblib==0.15.1
+    - kiwisolver==1.2.0
+    - matplotlib==3.2.1
+    - numpy==1.18.4
+    - opt-einsum==3.2.1
+    - pandas==1.0.3
+    - pillow==7.1.2
+    - pip==20.2.3
+    - pyparsing==2.4.7
+    - python-dateutil==2.8.1
+    - pytz==2020.1
+    - scikit-learn==0.23.1
+    - scipy==1.4.1
+    - seaborn==0.10.1
+    - six==1.15.0
+    - sklearn==0.0
+    - threadpoolctl==2.0.0
+    - torch==1.5.0
+    - torchvision==0.6.0
+    - tqdm==4.46.0
+prefix: /home/ubuntu/anaconda3/envs/dp-flows
