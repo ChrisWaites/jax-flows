@@ -1,7 +1,7 @@
 import jax.numpy as np
 from jax import random
 from jax.scipy.special import logsumexp
-from jax.scipy.stats import multivariate_normal
+from jax.scipy.stats import norm, multivariate_normal
 
 
 def Normal():
@@ -11,14 +11,11 @@ def Normal():
     """
 
     def init_fun(rng, input_dim):
-        mean = np.zeros(input_dim)
-        covariance = np.eye(input_dim)
-
         def log_pdf(params, inputs):
-            return multivariate_normal.logpdf(inputs, mean, covariance)
+            return norm.logpdf(inputs).sum(1)
 
         def sample(rng, params, num_samples=1):
-            return random.multivariate_normal(rng, mean, covariance, (num_samples,))
+            return random.normal(rng, (num_samples, input_dim))
 
         return (), log_pdf, sample
 
