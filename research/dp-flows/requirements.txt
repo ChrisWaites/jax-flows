@@ -8,7 +8,7 @@ jaxlib==0.1.47
 joblib==0.15.1
 kiwisolver==1.2.0
 matplotlib==3.2.1
-numpy==1.18.4
+numpy==1.22.0
 opt-einsum==3.2.1
 pandas==1.0.3
 Pillow==8.1.1
