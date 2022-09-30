@@ -5,7 +5,7 @@ future==0.18.2
 h5py==2.10.0
 jax==0.1.68
 jaxlib==0.1.47
-joblib==0.15.1
+joblib==1.2.0
 kiwisolver==1.2.0
 matplotlib==3.2.1
 numpy==1.18.4
