@@ -22,7 +22,7 @@ setup(
         'jaxlib',
         'numpy',
         'scipy',
-        'sklearn',
+        'scikit-learn',
     ],
     extras_require=extras,
     classifiers=[
